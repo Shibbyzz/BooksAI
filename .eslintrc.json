@@ -1,0 +1,68 @@
+{
+  "extends": [
+    "next/core-web-vitals",
+    "prettier"
+  ],
+  "plugins": ["@typescript-eslint", "unused-imports"],
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "ecmaVersion": "latest",
+    "sourceType": "module",
+    "project": "./tsconfig.json"
+  },
+  "rules": {
+    // TypeScript specific rules
+    "@typescript-eslint/no-unused-vars": "off",
+    "@typescript-eslint/no-explicit-any": "warn",
+    "@typescript-eslint/consistent-type-imports": [
+      "error",
+      {
+        "prefer": "type-imports",
+        "fixStyle": "inline-type-imports"
+      }
+    ],
+    "@typescript-eslint/no-import-type-side-effects": "error",
+    "@typescript-eslint/prefer-nullish-coalescing": "error",
+    "@typescript-eslint/prefer-optional-chain": "error",
+
+    // Import management
+    "unused-imports/no-unused-imports": "error",
+    "unused-imports/no-unused-vars": [
+      "warn",
+      {
+        "vars": "all",
+        "varsIgnorePattern": "^_",
+        "args": "after-used",
+        "argsIgnorePattern": "^_"
+      }
+    ],
+
+    // General rules
+    "prefer-const": "error",
+    "no-var": "error",
+    "no-console": ["warn", { "allow": ["warn", "error"] }],
+    "react/prop-types": "off",
+    "react/react-in-jsx-scope": "off",
+
+    // Next.js specific
+    "@next/next/no-html-link-for-pages": "off"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.stories.*"],
+      "extends": ["plugin:storybook/recommended"],
+      "rules": {
+        "storybook/hierarchy-separator": "error",
+        "storybook/default-exports": "error"
+      }
+    }
+  ],
+  "ignorePatterns": [
+    "node_modules/",
+    ".next/",
+    "dist/",
+    "build/",
+    "coverage/",
+    "storybook-static/"
+  ]
+}

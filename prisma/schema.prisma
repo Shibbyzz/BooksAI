@@ -1,0 +1,397 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  avatar    String?
+  role      Role     @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Subscription fields
+  subscriptionTier SubscriptionTier @default(FREE)
+  subscriptionId   String?        // Stripe subscription ID
+  currentPeriodEnd DateTime?
+  
+  // Usage tracking
+  booksGenerated   Int            @default(0)
+  wordsGenerated   Int            @default(0)
+  lastResetDate    DateTime       @default(now())
+
+  // Relations
+  settings    UserSettings?
+  logs        Log[]
+  memberships Membership[]
+  ownedOrgs   Organization[] @relation("OrganizationOwner")
+  books       Book[]
+
+  @@map("users")
+}
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  avatar      String?
+  plan        Plan     @default(FREE)
+  status      OrgStatus @default(ACTIVE)
+  ownerId     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  owner       User         @relation("OrganizationOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  memberships Membership[]
+  logs        Log[]
+
+  @@map("organizations")
+}
+
+model Membership {
+  id     String         @id @default(cuid())
+  role   MembershipRole @default(MEMBER)
+  status MembershipStatus @default(ACTIVE)
+  userId String
+  orgId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId])
+  @@map("memberships")
+}
+
+model UserSettings {
+  id       String  @id @default(cuid())
+  userId   String  @unique
+  theme    Theme   @default(SYSTEM)
+  language String  @default("en")
+  
+  // Notification preferences
+  emailNotifications     Boolean @default(true)
+  pushNotifications      Boolean @default(true)
+  marketingEmails        Boolean @default(false)
+  
+  // Privacy settings
+  profileVisibility      Visibility @default(PUBLIC)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
+}
+
+model Log {
+  id        String   @id @default(cuid())
+  userId    String?
+  orgId     String?
+  action    String
+  resource  String?
+  details   Json?
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  org  Organization? @relation(fields: [orgId], references: [id], onDelete: SetNull)
+
+  @@map("logs")
+}
+
+// ===== BOOKSAI MODELS =====
+
+model Book {
+  id               String         @id @default(cuid())
+  userId           String
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Basic info
+  title            String
+  prompt           String         @db.Text
+  backCover        String?        @db.Text
+  storylineSummary String?        @db.Text
+  
+  // Settings
+  settings         BookSettings?
+  
+  // Structure
+  outline          BookOutline?
+  chapters         Chapter[]
+  storyMemory      StoryMemory?
+  
+  // Status
+  status           BookStatus     @default(PLANNING)
+  generationStep   GenerationStep @default(PROMPT)
+  
+  // Export
+  lastExportedAt   DateTime?
+  exportFormats    String[]       @default([])
+  
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@map("books")
+}
+
+model BookSettings {
+  id              String @id @default(cuid())
+  bookId          String @unique
+  book            Book   @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  
+  language        String @default("en")
+  wordCount       Int    @default(50000)
+  genre           String
+  targetAudience  String
+  tone            String
+  endingType      String
+  structure       String
+  
+  characterNames  String[] @default([])
+  inspirationBooks String[] @default([])
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("book_settings")
+}
+
+model BookOutline {
+  id          String    @id @default(cuid())
+  bookId      String    @unique
+  book        Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  
+  summary     String    @db.Text
+  themes      String[]
+  plotPoints  Json      // Key story beats and arcs
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("book_outlines")
+}
+
+model Chapter {
+  id          String    @id @default(cuid())
+  bookId      String
+  book        Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  
+  chapterNumber Int
+  title       String
+  summary     String    @db.Text
+  
+  sections    Section[]
+  
+  status      ChapterStatus @default(PLANNED)
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  @@unique([bookId, chapterNumber])
+  @@map("chapters")
+}
+
+model Section {
+  id          String    @id @default(cuid())
+  chapterId   String
+  chapter     Chapter   @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  
+  sectionNumber Int
+  title       String?
+  content     String    @db.Text
+  wordCount   Int       @default(0)
+  
+  // AI metadata
+  prompt      String    @db.Text
+  aiModel     String
+  tokensUsed  Int       @default(0)
+  
+  status      SectionStatus @default(PLANNED)
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  @@unique([chapterId, sectionNumber])
+  @@map("sections")
+}
+
+model StoryMemory {
+  id          String     @id @default(cuid())
+  bookId      String     @unique
+  book        Book       @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  
+  characters  Character[]
+  locations   Location[]
+  timeline    TimelineEvent[]
+  themes      String[]
+  worldRules  Json       // Fantasy/sci-fi world building rules
+  
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@map("story_memories")
+}
+
+model Character {
+  id              String      @id @default(cuid())
+  storyMemoryId   String
+  storyMemory     StoryMemory @relation(fields: [storyMemoryId], references: [id], onDelete: Cascade)
+  
+  name            String
+  role            String      // protagonist, antagonist, supporting
+  description     String      @db.Text
+  personality     String      @db.Text
+  backstory       String?     @db.Text
+  arc             String?     @db.Text
+  
+  firstAppearance String?     // Chapter reference
+  relationships   Json        // Relationships with other characters
+  
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@map("characters")
+}
+
+model Location {
+  id              String      @id @default(cuid())
+  storyMemoryId   String
+  storyMemory     StoryMemory @relation(fields: [storyMemoryId], references: [id], onDelete: Cascade)
+  
+  name            String
+  description     String      @db.Text
+  importance      String      // major, minor, mentioned
+  
+  firstMention    String?     // Chapter reference
+  
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@map("locations")
+}
+
+model TimelineEvent {
+  id              String      @id @default(cuid())
+  storyMemoryId   String
+  storyMemory     StoryMemory @relation(fields: [storyMemoryId], references: [id], onDelete: Cascade)
+  
+  title           String
+  description     String      @db.Text
+  chapterReference String
+  importance      EventImportance
+  
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@map("timeline_events")
+}
+
+// ===== EXISTING ENUMS =====
+
+enum Plan {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+enum OrgStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum MembershipRole {
+  OWNER
+  ADMIN
+  MEMBER
+  GUEST
+}
+
+enum MembershipStatus {
+  ACTIVE
+  PENDING
+  SUSPENDED
+}
+
+enum Theme {
+  LIGHT
+  DARK
+  SYSTEM
+}
+
+enum Visibility {
+  PRIVATE
+  PUBLIC
+  FRIENDS
+}
+
+// ===== BOOKSAI ENUMS =====
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum SubscriptionTier {
+  FREE
+  BASIC
+  PREMIUM
+}
+
+enum BookStatus {
+  PLANNING
+  GENERATING
+  COMPLETE
+  ARCHIVED
+}
+
+enum GenerationStep {
+  PROMPT
+  BACK_COVER
+  RESEARCH
+  OUTLINE
+  STRATEGIC_PLANNING
+  CONTINUITY_INIT
+  CHAPTERS
+  SECTIONS
+  SUPERVISION
+  COMPLETE
+}
+
+enum ChapterStatus {
+  PLANNED
+  GENERATING
+  COMPLETE
+  NEEDS_REVISION
+}
+
+enum SectionStatus {
+  PLANNED
+  GENERATING
+  COMPLETE
+  NEEDS_REVISION
+}
+
+enum EventImportance {
+  CRITICAL
+  MAJOR
+  MINOR
+} 
