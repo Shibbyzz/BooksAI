@@ -1,9 +1,14 @@
-import { PlanningAgent, type OutlineGeneration } from './agents/planning-agent';
-import { WritingAgent, type SectionContext } from './agents/writing-agent';
+import { PlanningAgent, type OutlineGeneration, type PlanningInput } from './agents/planning-agent';
+import { WritingAgent, type SectionContext, type SectionGeneration } from './agents/writing-agent';
 import { ResearchAgent } from './agents/research-agent';
-import { ChiefEditorAgent } from './agents/chief-editor-agent';
+import { type ProseValidation } from '../proseValidator';
+import { ChiefEditorAgent, type StoryBible } from './agents/chief-editor-agent';
 import { ContinuityInspectorAgent } from './agents/continuity-inspector-agent';
 import { ProofreaderAgent } from './agents/proofreader-agent';
+import { WriterDirector, type SceneContext, type SceneGeneration } from './agents/specialized-writers';
+import { HumanQualityEnhancer, SceneTransitionEnhancer, type QualityEnhancement } from './agents/human-quality-enhancer';
+import { SupervisionAgent, type ChapterReview, type StoryArcProgress } from './agents/supervision-agent';
+import { RateLimiter } from './rate-limiter';
 import { prisma } from '@/lib/prisma';
 import { 
   GenerationStep,
@@ -15,6 +20,8 @@ import type {
   Book, 
   GenerationProgress
 } from '@/types';
+import fs from 'fs/promises';
+import path from 'path';
 
 export interface GenerationConfig {
   planningAgent: {
@@ -54,6 +61,34 @@ export interface GenerationJobOptions {
   notificationWebhook?: string;
 }
 
+export interface FailedSection {
+  bookId: string;
+  chapterId: string;
+  sectionNumber: number;
+  reason: string;
+  timestamp: Date;
+  retryCount: number;
+  metadata: {
+    consistencyScore?: number;
+    qualityScore?: number;
+    errorMessage?: string;
+    proseSeverity?: 'low' | 'medium' | 'high' | 'critical';
+    proseWarnings?: string[];
+    proseSuggestions?: string[];
+  };
+}
+
+export interface GenerationCheckpoint {
+  bookId: string;
+  storyBible?: StoryBible;
+  qualityPlan?: QualityEnhancement;
+  completedChapters: number[];
+  completedSections: { [chapterId: string]: number[] };
+  failedSections: FailedSection[];
+  timestamp: Date;
+  version: string;
+}
+
 export class BookGenerationOrchestrator {
   private planningAgent: PlanningAgent;
   private writingAgent: WritingAgent;
@@ -61,7 +96,16 @@ export class BookGenerationOrchestrator {
   private chiefEditorAgent: ChiefEditorAgent;
   private continuityAgent: ContinuityInspectorAgent;
   private proofreaderAgent: ProofreaderAgent;
+  private writerDirector: WriterDirector;
+  private qualityEnhancer: HumanQualityEnhancer;
+  private transitionEnhancer: SceneTransitionEnhancer;
+  private supervisionAgent: SupervisionAgent; // NEW: Supervision agent
+  private rateLimiter: RateLimiter; // NEW: Rate limiter
   private config: GenerationConfig;
+  private storyBible?: StoryBible; // Store story bible for reference
+  private qualityPlan?: QualityEnhancement; // Store quality enhancement plan
+  private failedSections: FailedSection[] = []; // NEW: Failed sections queue
+  private checkpointDir: string; // NEW: Checkpoint directory
 
   constructor(config?: Partial<GenerationConfig>) {
     this.config = {
@@ -132,6 +176,277 @@ export class BookGenerationOrchestrator {
       temperature: this.config.proofreaderAgent?.temperature || 0.0,
       maxTokens: 3000
     });
+
+    // Initialize specialized writer director
+    this.writerDirector = new WriterDirector({
+      model: this.config.writingAgent.model,
+      temperature: 0.8,
+      maxTokens: 4000
+    });
+
+    // NEW: Initialize human quality enhancers
+    this.qualityEnhancer = new HumanQualityEnhancer({
+      model: 'gpt-4o',
+      temperature: 0.7,
+      maxTokens: 4000
+    });
+
+    this.transitionEnhancer = new SceneTransitionEnhancer({
+      model: 'gpt-4o',
+      temperature: 0.6,
+      maxTokens: 1000
+    });
+
+    // NEW: Initialize supervision agent
+    this.supervisionAgent = new SupervisionAgent({
+      model: 'gpt-4o',
+      temperature: 0.3,
+      maxTokens: 3000
+    });
+
+    // NEW: Initialize rate limiter
+    this.rateLimiter = new RateLimiter();
+
+    // NEW: Initialize checkpoint directory
+    this.checkpointDir = path.join(process.cwd(), 'checkpoints');
+  }
+
+  // ============================================================================
+  // VALIDATION METHODS
+  // ============================================================================
+
+  /**
+   * Validate story bible structure and content
+   */
+  validateStoryBible(storyBible: StoryBible): { isValid: boolean; errors: string[] } {
+    const errors: string[] = [];
+
+    // Check overview
+    if (!storyBible.overview?.premise) {
+      errors.push('Story bible missing premise');
+    }
+    if (!storyBible.overview?.theme) {
+      errors.push('Story bible missing theme');
+    }
+
+    // Check characters
+    if (!storyBible.characters || storyBible.characters.length === 0) {
+      errors.push('Story bible missing characters');
+    } else {
+      storyBible.characters.forEach((char, index) => {
+        if (!char.name) errors.push(`Character ${index} missing name`);
+        if (!char.role) errors.push(`Character ${index} missing role`);
+        if (!char.background) errors.push(`Character ${char.name || index} missing background`);
+      });
+    }
+
+    // Check chapter plans
+    if (!storyBible.chapterPlans || storyBible.chapterPlans.length === 0) {
+      errors.push('Story bible missing chapter plans');
+    } else {
+      const chapterNumbers = storyBible.chapterPlans.map(c => c.number);
+      const duplicates = chapterNumbers.filter((n, i) => chapterNumbers.indexOf(n) !== i);
+      if (duplicates.length > 0) {
+        errors.push(`Duplicate chapter numbers: ${duplicates.join(', ')}`);
+      }
+
+      storyBible.chapterPlans.forEach((chapter, index) => {
+        if (!chapter.title) errors.push(`Chapter ${chapter.number || index} missing title`);
+        if (!chapter.purpose) errors.push(`Chapter ${chapter.number || index} missing purpose`);
+        if (!chapter.scenes || chapter.scenes.length === 0) {
+          errors.push(`Chapter ${chapter.number || index} missing scenes`);
+        }
+      });
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  }
+
+  /**
+   * Validate structure plan from Chief Editor
+   */
+  validateStructurePlan(structurePlan: any): { isValid: boolean; errors: string[] } {
+    const errors: string[] = [];
+
+    if (!structurePlan) {
+      errors.push('Structure plan is null or undefined');
+      return { isValid: false, errors };
+    }
+
+    // Check chapters array
+    if (!structurePlan.chapters || !Array.isArray(structurePlan.chapters)) {
+      errors.push('Structure plan missing chapters array');
+    } else {
+      structurePlan.chapters.forEach((chapter: any, index: number) => {
+        if (!chapter.number) errors.push(`Chapter ${index} missing number`);
+        if (!chapter.title) errors.push(`Chapter ${index} missing title`);
+        if (!chapter.purpose) errors.push(`Chapter ${index} missing purpose`);
+        if (!chapter.wordCountTarget || chapter.wordCountTarget <= 0) {
+          errors.push(`Chapter ${index} missing or invalid word count target`);
+        }
+      });
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  }
+
+  // ============================================================================
+  // CHECKPOINTING METHODS
+  // ============================================================================
+
+  /**
+   * Save generation checkpoint to disk
+   */
+  async saveCheckpoint(bookId: string, checkpoint: GenerationCheckpoint): Promise<void> {
+    try {
+      // Ensure checkpoint directory exists
+      await fs.mkdir(this.checkpointDir, { recursive: true });
+
+      const checkpointPath = path.join(this.checkpointDir, `${bookId}-checkpoint.json`);
+      
+      // Add timestamp and version
+      const checkpointData = {
+        ...checkpoint,
+        timestamp: new Date(),
+        version: '1.0'
+      };
+
+      await fs.writeFile(checkpointPath, JSON.stringify(checkpointData, null, 2));
+      
+      console.log(`💾 Checkpoint saved: ${checkpointPath}`);
+    } catch (error) {
+      console.error('Failed to save checkpoint:', error);
+      // Non-critical error - don't throw
+    }
+  }
+
+  /**
+   * Load generation checkpoint from disk
+   */
+  async loadCheckpoint(bookId: string): Promise<GenerationCheckpoint | null> {
+    try {
+      const checkpointPath = path.join(this.checkpointDir, `${bookId}-checkpoint.json`);
+      
+      const checkpointData = await fs.readFile(checkpointPath, 'utf8');
+      const checkpoint = JSON.parse(checkpointData) as GenerationCheckpoint;
+      
+      console.log(`📁 Checkpoint loaded: ${checkpointPath}`);
+      return checkpoint;
+    } catch (error) {
+      console.log(`📁 No checkpoint found for book ${bookId}`);
+      return null;
+    }
+  }
+
+  /**
+   * Clear checkpoint after successful completion
+   */
+  async clearCheckpoint(bookId: string): Promise<void> {
+    try {
+      const checkpointPath = path.join(this.checkpointDir, `${bookId}-checkpoint.json`);
+      await fs.unlink(checkpointPath);
+      console.log(`🗑️  Checkpoint cleared: ${checkpointPath}`);
+    } catch (error) {
+      // Ignore errors - checkpoint might not exist
+    }
+  }
+
+  // ============================================================================
+  // FAILED SECTIONS MANAGEMENT
+  // ============================================================================
+
+  /**
+   * Add section to failed queue
+   */
+  addFailedSection(failedSection: FailedSection): void {
+    this.failedSections.push(failedSection);
+    console.log(`❌ Added failed section to queue: Chapter ${failedSection.chapterId}, Section ${failedSection.sectionNumber} (${failedSection.reason})`);
+  }
+
+  /**
+   * Get failed sections for a book
+   */
+  getFailedSections(bookId: string): FailedSection[] {
+    return this.failedSections.filter(section => section.bookId === bookId);
+  }
+
+  /**
+   * Retry failed sections
+   */
+  async retryFailedSections(bookId: string, maxRetries: number = 3): Promise<void> {
+    const failedSections = this.getFailedSections(bookId);
+    const retryableSections = failedSections.filter(section => section.retryCount < maxRetries);
+    
+    if (retryableSections.length === 0) {
+      console.log('✅ No retryable failed sections found');
+      return;
+    }
+
+    console.log(`🔄 Retrying ${retryableSections.length} failed sections...`);
+
+    const book = await prisma.book.findUnique({
+      where: { id: bookId },
+      include: { settings: true }
+    });
+
+    if (!book?.settings) {
+      throw new Error('Book or settings not found for retry');
+    }
+
+    for (const failedSection of retryableSections) {
+      try {
+        console.log(`🔄 Retrying Chapter ${failedSection.chapterId}, Section ${failedSection.sectionNumber} (attempt ${failedSection.retryCount + 1})`);
+        
+        // Get chapter context
+        const chapterContext = await this.getChapterContext(bookId, failedSection.chapterId, book.settings);
+        
+        if (chapterContext) {
+          // Retry section generation
+          await this.generateSectionContent(
+            bookId,
+            failedSection.chapterId,
+            failedSection.sectionNumber,
+            4, // Default total sections
+            1000, // Default target words
+            book.settings,
+            chapterContext
+          );
+          
+          // Remove from failed queue on success
+          this.failedSections = this.failedSections.filter(s => s !== failedSection);
+          console.log(`✅ Successfully retried section`);
+        }
+      } catch (error) {
+        // Increment retry count
+        failedSection.retryCount++;
+        failedSection.metadata.errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        
+        console.log(`❌ Retry failed (attempt ${failedSection.retryCount}): ${failedSection.metadata.errorMessage}`);
+        
+        if (failedSection.retryCount >= maxRetries) {
+          console.log(`💀 Section exceeded max retries and will be marked as permanently failed`);
+        }
+      }
+    }
+  }
+
+  /**
+   * Clear all failed sections for a book
+   */
+  clearFailedSections(bookId: string): void {
+    const beforeCount = this.failedSections.length;
+    this.failedSections = this.failedSections.filter(section => section.bookId !== bookId);
+    const clearedCount = beforeCount - this.failedSections.length;
+    
+    if (clearedCount > 0) {
+      console.log(`🗑️  Cleared ${clearedCount} failed sections for book ${bookId}`);
+    }
   }
 
   /**
@@ -216,7 +531,7 @@ export class BookGenerationOrchestrator {
   }
 
   /**
-   * Generate complete book outline
+   * ENHANCED: Generate complete book outline with story bible
    */
   async generateOutline(bookId: string): Promise<OutlineGeneration> {
     try {
@@ -235,68 +550,73 @@ export class BookGenerationOrchestrator {
         throw new Error('Book not found or missing required data for outline generation');
       }
 
-      console.log('Generating outline with Chief Editor intelligence...');
+      console.log('🎯 Generating comprehensive story bible with Chief Editor intelligence...');
 
-      // Step 1: Generate basic outline
-      const outline = await this.planningAgent.generateOutline(
+      // Step 1: Conduct comprehensive research
+      console.log('📚 Phase 1: Comprehensive Research...');
+      const research = await this.researchAgent.conductComprehensiveResearch(
         book.prompt,
         book.backCover,
         book.settings
       );
 
-      // Step 2: Enhance chapter summaries
-      const enhancedOutline = await this.planningAgent.generateChapterSummaries(
-        outline,
+      // Step 2: Generate comprehensive book plan using new PlanningAgent API
+      console.log('📋 Phase 2: Comprehensive Book Planning...');
+      const planningInput: PlanningInput = {
+        prompt: book.prompt,
+        settings: book.settings,
+        research: research
+      };
+
+      const planningResult = await this.planningAgent.generateBookPlan(planningInput);
+      
+      // Extract components from the comprehensive plan
+      const { bookPlan, retryMetadata, debugInfo } = planningResult;
+      
+      // Type assertion to handle schema mismatch
+      const storyBible = bookPlan.storyBible as StoryBible;
+      this.storyBible = storyBible;
+
+      console.log(`📊 Planning completed with ${retryMetadata.totalRetries} retries in ${retryMetadata.retryDuration}ms`);
+      console.log(`🎨 Creative strategy: ${debugInfo.strategyPreview}`);
+      console.log(`📋 Outline preview: ${debugInfo.outlinePreview}`);
+
+      // Step 3: Initialize continuity tracking with story bible
+      console.log('🔍 Phase 3: Continuity System Initialization...');
+      await this.continuityAgent.initializeTracking(
+        bookPlan.outline.characters,
+        bookPlan.outline,
+        research,
         book.settings
       );
 
-      // Step 3: NEW - Use Chief Editor to optimize structure if available
-      let finalOutline = enhancedOutline;
-      try {
-        // Conduct basic research for context
-        const basicResearch = await this.researchAgent.conductComprehensiveResearch(
-          book.prompt,
-          book.backCover,
-          book.settings
-        );
+      // Step 4: NEW - Create human-quality enhancement plan
+      console.log('🎨 Phase 4: Human-Quality Enhancement Planning...');
+      this.qualityPlan = await this.qualityEnhancer.createQualityEnhancementPlan(
+        this.storyBible,
+        book.settings
+      );
 
-        // Have Chief Editor review and enhance the structure
-        const structurePlan = await this.chiefEditorAgent.createBookStructurePlan(
-          book.prompt,
-          book.backCover,
-          enhancedOutline,
-          basicResearch,
-          book.settings
-        );
+      // Save comprehensive data to database
+      await this.saveStoryBibleToDatabase(bookId, this.storyBible, bookPlan.outline);
 
-        // Apply Chief Editor's structural improvements to the outline
-        finalOutline = this.applyStructurePlanToOutline(enhancedOutline, structurePlan, book.settings);
-        
-        console.log('Chief Editor structure planning applied successfully');
-      } catch (editorError) {
-        console.warn('Chief Editor enhancement failed, using standard outline:', editorError);
-        // Continue with the enhanced outline if Chief Editor fails
-      }
+      // NEW: Save story memory data to database
+      await this.saveStoryMemoryToDatabase(bookId, this.storyBible, research);
 
-      // Save outline to database
-      await prisma.bookOutline.upsert({
-        where: { bookId },
-        create: {
-          bookId,
-          summary: finalOutline.summary,
-          themes: finalOutline.themes,
-          plotPoints: finalOutline as any // JSON field
-        },
-        update: {
-          summary: finalOutline.summary,
-          themes: finalOutline.themes,
-          plotPoints: finalOutline as any,
-          updatedAt: new Date()
-        }
+      // Create chapters with scene-based structure
+      await this.createChaptersFromStoryBible(bookId, this.storyBible);
+
+      // NEW: Save checkpoint after outline completion
+      await this.saveCheckpoint(bookId, {
+        bookId,
+        storyBible: this.storyBible,
+        qualityPlan: this.qualityPlan,
+        completedChapters: [],
+        completedSections: {},
+        failedSections: [],
+        timestamp: new Date(),
+        version: '1.0'
       });
-
-      // Create chapters in database with intelligent structure
-      await this.createChaptersFromOutline(bookId, finalOutline);
 
       // Update book progress
       await prisma.book.update({
@@ -313,11 +633,383 @@ export class BookGenerationOrchestrator {
         status: 'completed'
       });
 
-      return finalOutline;
+      console.log('✅ Comprehensive story bible and outline generation completed');
+      return bookPlan.outline;
+      
     } catch (error) {
       await this.handleGenerationError(bookId, GenerationStep.OUTLINE, error);
       throw error;
     }
+  }
+
+  /**
+   * NEW: Convert story bible to outline format for compatibility
+   */
+  private convertStoryBibleToOutline(storyBible: StoryBible, basicOutline: OutlineGeneration): OutlineGeneration {
+    return {
+      summary: storyBible.overview.premise,
+      themes: [storyBible.overview.theme],
+      characters: storyBible.characters.map(char => ({
+        name: char.name,
+        role: char.role,
+        description: char.background,
+        arc: char.arc
+      })),
+      chapters: storyBible.chapterPlans.map(plan => ({
+        number: plan.number,
+        title: plan.title,
+        summary: plan.purpose,
+        keyEvents: plan.scenes.map(scene => scene.purpose),
+        characters: plan.scenes.flatMap(scene => scene.characters),
+        location: plan.scenes[0]?.setting || 'Various locations',
+        wordCountTarget: plan.wordCountTarget
+      }))
+    };
+  }
+
+  /**
+   * NEW: Save story bible data to database
+   */
+  private async saveStoryBibleToDatabase(bookId: string, storyBible: StoryBible, outline: OutlineGeneration): Promise<void> {
+    // Save outline with proper JSON serialization
+    const plotData = JSON.parse(JSON.stringify({
+      storyBible: storyBible,
+      basicOutline: outline
+    }));
+
+    await prisma.bookOutline.upsert({
+      where: { bookId },
+      create: {
+        bookId,
+        summary: outline.summary,
+        themes: outline.themes,
+        plotPoints: plotData
+      },
+      update: {
+        summary: outline.summary,
+        themes: outline.themes,
+        plotPoints: plotData,
+        updatedAt: new Date()
+      }
+    });
+  }
+
+  /**
+   * NEW: Save story memory data to database
+   */
+  private async saveStoryMemoryToDatabase(bookId: string, storyBible: StoryBible, research: any): Promise<void> {
+    console.log('💾 Saving story memory data to database...');
+    
+    try {
+      // Create or update StoryMemory record
+      const storyMemory = await prisma.storyMemory.upsert({
+        where: { bookId },
+        create: {
+          bookId,
+          themes: [storyBible.overview.theme],
+          worldRules: {
+            premise: storyBible.overview.premise,
+            theme: storyBible.overview.theme,
+            conflict: storyBible.overview.conflict,
+            resolution: storyBible.overview.resolution,
+            targetAudience: storyBible.overview.targetAudience,
+            tone: storyBible.overview.tone
+          }
+        },
+        update: {
+          themes: [storyBible.overview.theme],
+          worldRules: {
+            premise: storyBible.overview.premise,
+            theme: storyBible.overview.theme,
+            conflict: storyBible.overview.conflict,
+            resolution: storyBible.overview.resolution,
+            targetAudience: storyBible.overview.targetAudience,
+            tone: storyBible.overview.tone
+          },
+          updatedAt: new Date()
+        }
+      });
+
+      // Save characters from story bible
+      await this.saveCharactersToDatabase(storyMemory.id, storyBible.characters);
+
+      // Save locations from story bible and research
+      await this.saveLocationsToDatabase(storyMemory.id, storyBible, research);
+
+      // Save timeline events from story bible
+      await this.saveTimelineEventsToDatabase(storyMemory.id, storyBible);
+
+      console.log(`✅ Story memory saved: ${storyBible.characters.length} characters, ${storyBible.chapterPlans.length} chapters`);
+
+    } catch (error) {
+      console.error('Error saving story memory:', error);
+      // Don't throw error to avoid breaking the generation flow
+    }
+  }
+
+  /**
+   * NEW: Save characters to database
+   */
+  private async saveCharactersToDatabase(storyMemoryId: string, characters: any[]): Promise<void> {
+    // Clear existing characters
+    await prisma.character.deleteMany({
+      where: { storyMemoryId }
+    });
+
+    // Save characters from story bible
+    for (const character of characters) {
+      await prisma.character.create({
+        data: {
+          storyMemoryId,
+          name: character.name,
+          role: character.role || 'supporting',
+          description: character.background || character.description || `${character.name} is a character in the story.`,
+          personality: character.personality || `${character.name} has a unique personality.`,
+          backstory: character.backstory || character.background || null,
+          arc: character.arc || null,
+          firstAppearance: character.firstAppearance || 'Chapter 1',
+          relationships: character.relationships || {}
+        }
+      });
+    }
+  }
+
+  /**
+   * NEW: Save locations to database
+   */
+  private async saveLocationsToDatabase(storyMemoryId: string, storyBible: StoryBible, research: any): Promise<void> {
+    // Clear existing locations
+    await prisma.location.deleteMany({
+      where: { storyMemoryId }
+    });
+
+    // Extract locations from story bible scenes
+    const locationsSet = new Set<string>();
+    
+    for (const chapterPlan of storyBible.chapterPlans) {
+      for (const scene of chapterPlan.scenes) {
+        if (scene.setting && scene.setting.trim()) {
+          locationsSet.add(scene.setting.trim());
+        }
+      }
+    }
+
+    // Add locations from research if available
+    if (research && research.settingDetails) {
+      for (const settingDetail of research.settingDetails) {
+        if (settingDetail.topic && settingDetail.topic.trim()) {
+          locationsSet.add(settingDetail.topic.trim());
+        }
+      }
+    }
+
+    // Save unique locations
+    for (const locationName of Array.from(locationsSet)) {
+      await prisma.location.create({
+        data: {
+          storyMemoryId,
+          name: locationName,
+          description: `${locationName} is a location in the story.`,
+          importance: 'minor',
+          firstMention: 'Chapter 1'
+        }
+      });
+    }
+  }
+
+  /**
+   * NEW: Save timeline events to database
+   */
+  private async saveTimelineEventsToDatabase(storyMemoryId: string, storyBible: StoryBible): Promise<void> {
+    // Clear existing timeline events
+    await prisma.timelineEvent.deleteMany({
+      where: { storyMemoryId }
+    });
+
+    // Create timeline events from chapter plans
+    for (const chapterPlan of storyBible.chapterPlans) {
+      // Create event for each chapter's main purpose
+      await prisma.timelineEvent.create({
+        data: {
+          storyMemoryId,
+          title: `Chapter ${chapterPlan.number}: ${chapterPlan.title}`,
+          description: chapterPlan.purpose || `Events of chapter ${chapterPlan.number}`,
+          chapterReference: `Chapter ${chapterPlan.number}`,
+          importance: chapterPlan.number <= 3 ? 'MAJOR' : 
+                      chapterPlan.number >= storyBible.chapterPlans.length - 2 ? 'MAJOR' : 'MINOR'
+        }
+      });
+
+      // Create events for significant scenes
+      for (const scene of chapterPlan.scenes) {
+        if (scene.purpose && scene.purpose.toLowerCase().includes('climax') || 
+            scene.purpose && scene.purpose.toLowerCase().includes('conflict') ||
+            scene.purpose && scene.purpose.toLowerCase().includes('resolution')) {
+          await prisma.timelineEvent.create({
+            data: {
+              storyMemoryId,
+              title: `Scene: ${scene.purpose}`,
+              description: scene.purpose,
+              chapterReference: `Chapter ${chapterPlan.number}`,
+              importance: 'MAJOR'
+            }
+          });
+        }
+      }
+    }
+  }
+
+  /**
+   * NEW: Update story memory with continuity tracking data
+   */
+  private async updateStoryMemoryFromContinuityTracking(bookId: string, chapterNumber: number): Promise<void> {
+    try {
+      // Get current tracker state from continuity agent
+      const trackerState = this.continuityAgent.getTrackerState();
+      
+      // Get story memory record
+      const storyMemory = await prisma.storyMemory.findUnique({
+        where: { bookId }
+      });
+
+      if (!storyMemory) {
+        console.warn('No story memory found for book:', bookId);
+        return;
+      }
+
+      // Update character states from continuity tracking
+      for (const characterState of trackerState.characters) {
+        await prisma.character.updateMany({
+          where: {
+            storyMemoryId: storyMemory.id,
+            name: characterState.name
+          },
+          data: {
+            // Update character with latest state information
+            description: characterState.physicalState ? 
+              `${characterState.name} - Physical: ${characterState.physicalState}` : 
+              undefined,
+            personality: characterState.emotionalState ? 
+              `${characterState.name} - Emotional: ${characterState.emotionalState}` : 
+              undefined,
+            relationships: characterState.relationships || {}
+          }
+        });
+      }
+
+      // Add new timeline events from plot points
+      for (const plotPoint of trackerState.plotPoints) {
+        // Check if this event already exists
+        const existingEvent = await prisma.timelineEvent.findFirst({
+          where: {
+            storyMemoryId: storyMemory.id,
+            title: plotPoint.event,
+            chapterReference: `Chapter ${chapterNumber}`
+          }
+        });
+
+        if (!existingEvent) {
+          await prisma.timelineEvent.create({
+            data: {
+              storyMemoryId: storyMemory.id,
+              title: plotPoint.event,
+              description: plotPoint.consequences.join('; '),
+              chapterReference: `Chapter ${chapterNumber}`,
+              importance: plotPoint.affectedCharacters.length > 0 ? 'MAJOR' : 'MINOR'
+            }
+          });
+        }
+      }
+
+      // Update locations with new information
+      for (const location of trackerState.worldBuilding) {
+        // Check if location already exists
+        const existingLocation = await prisma.location.findFirst({
+          where: {
+            storyMemoryId: storyMemory.id,
+            name: location.element
+          }
+        });
+
+        if (existingLocation) {
+          // Update existing location
+          await prisma.location.update({
+            where: { id: existingLocation.id },
+            data: {
+              description: location.description
+            }
+          });
+        } else {
+          // Create new location
+          await prisma.location.create({
+            data: {
+              storyMemoryId: storyMemory.id,
+              name: location.element,
+              description: location.description,
+              importance: 'minor',
+              firstMention: `Chapter ${chapterNumber}`
+            }
+          });
+        }
+      }
+
+      console.log(`📊 Updated story memory for Chapter ${chapterNumber}`);
+
+    } catch (error) {
+      console.error('Error updating story memory from continuity tracking:', error);
+      // Don't throw error to avoid breaking the generation flow
+    }
+  }
+
+  /**
+   * NEW: Create chapters from story bible with scene structure
+   */
+  private async createChaptersFromStoryBible(bookId: string, storyBible: StoryBible): Promise<void> {
+    // Delete existing chapters
+    await prisma.chapter.deleteMany({
+      where: { bookId }
+    });
+
+    console.log('📚 Creating chapters with scene-based structure from story bible...');
+    
+    for (const chapterPlan of storyBible.chapterPlans) {
+      console.log(`  📖 Chapter ${chapterPlan.number}: ${chapterPlan.title} (${chapterPlan.scenes.length} scenes)`);
+
+      const chapter = await prisma.chapter.create({
+        data: {
+          bookId,
+          chapterNumber: chapterPlan.number,
+          title: chapterPlan.title,
+          summary: chapterPlan.purpose,
+          status: 'PLANNED'
+        }
+      });
+
+      // Create sections based on scenes from story bible
+      for (let sceneIndex = 0; sceneIndex < chapterPlan.scenes.length; sceneIndex++) {
+        const scene = chapterPlan.scenes[sceneIndex];
+        
+        await prisma.section.create({
+          data: {
+            chapterId: chapter.id,
+            sectionNumber: sceneIndex + 1,
+            title: `Scene ${scene.sceneNumber}: ${scene.purpose}`,
+            content: '', // Will be generated
+            wordCount: 0,
+            prompt: JSON.stringify({
+              sceneData: scene,
+              chapterContext: chapterPlan,
+              researchFocus: chapterPlan.researchFocus
+            }),
+            aiModel: this.config.writingAgent.model,
+            tokensUsed: 0,
+            status: 'PLANNED'
+          }
+        });
+      }
+    }
+
+    console.log(`✅ Created ${storyBible.chapterPlans.length} chapters with scene-based structure`);
   }
 
   /**
@@ -362,6 +1054,24 @@ export class BookGenerationOrchestrator {
     options: GenerationJobOptions = { priority: 'normal', pauseable: true }
   ): Promise<void> {
     try {
+      // NEW: Check for existing checkpoint
+      const checkpoint = await this.loadCheckpoint(bookId);
+      
+      if (checkpoint) {
+        console.log('📁 Found existing checkpoint, resuming generation...');
+        
+        // Restore state from checkpoint
+        this.storyBible = checkpoint.storyBible;
+        this.qualityPlan = checkpoint.qualityPlan;
+        this.failedSections = checkpoint.failedSections;
+        
+        console.log(`🔄 Resuming from checkpoint: ${checkpoint.completedChapters.length} chapters completed`);
+        
+        // Resume from where we left off
+        await this.resumeBookGeneration(bookId, checkpoint);
+        return;
+      }
+
       // Update book status to generating
       await prisma.book.update({
         where: { id: bookId },
@@ -383,6 +1093,98 @@ export class BookGenerationOrchestrator {
       await this.generateBookContent(bookId);
 
     } catch (error) {
+      await this.handleGenerationError(bookId, GenerationStep.CHAPTERS, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Resume book generation from checkpoint
+   */
+  async resumeBookGeneration(bookId: string, checkpoint: GenerationCheckpoint): Promise<void> {
+    try {
+      console.log('🔄 Resuming book generation from checkpoint...');
+      
+      // Get current book state
+      const book = await prisma.book.findUnique({
+        where: { id: bookId },
+        include: {
+          chapters: {
+            orderBy: { chapterNumber: 'asc' },
+            include: { sections: true }
+          },
+          settings: true
+        }
+      });
+
+      if (!book || !book.settings) {
+        throw new Error('Book or settings not found for resume');
+      }
+
+      // Find chapters that still need completion
+      const incompleteChapters = book.chapters.filter(chapter => 
+        !checkpoint.completedChapters.includes(chapter.chapterNumber) ||
+        chapter.status !== 'COMPLETE'
+      );
+
+      console.log(`📚 Found ${incompleteChapters.length} incomplete chapters to process`);
+
+      // Process incomplete chapters
+      const totalChapters = book.chapters.length;
+      const completedChapters = checkpoint.completedChapters.length;
+      
+      for (const chapter of incompleteChapters) {
+        console.log(`🔄 Resuming Chapter ${chapter.chapterNumber}: ${chapter.title}`);
+        
+        await this.generateChapterContent(bookId, chapter.id, book.settings);
+        
+        // Update checkpoint
+        checkpoint.completedChapters.push(chapter.chapterNumber);
+        await this.saveCheckpoint(bookId, checkpoint);
+        
+        const progress = 45 + ((completedChapters + 1) / totalChapters) * 45;
+        await this.updateBookProgress(bookId, {
+          step: GenerationStep.SECTIONS,
+          currentChapter: chapter.chapterNumber,
+          totalChapters,
+          progress,
+          status: 'processing'
+        });
+      }
+
+      // Process any failed sections
+      if (checkpoint.failedSections.length > 0) {
+        console.log(`🔄 Retrying ${checkpoint.failedSections.length} failed sections...`);
+        await this.retryFailedSections(bookId);
+      }
+
+      // Continue with supervision and completion
+      await this.runSupervisionPass(bookId);
+
+      // Mark book as complete
+      await prisma.book.update({
+        where: { id: bookId },
+        data: {
+          status: 'COMPLETE',
+          generationStep: 'COMPLETE',
+          updatedAt: new Date()
+        }
+      });
+
+      await this.updateBookProgress(bookId, {
+        step: GenerationStep.COMPLETE,
+        progress: 100,
+        status: 'completed'
+      });
+
+      // Clean up
+      await this.clearCheckpoint(bookId);
+      this.clearFailedSections(bookId);
+
+      console.log('✅ Book generation resumed and completed successfully!');
+
+    } catch (error) {
+      console.error('Resume generation failed:', error);
       await this.handleGenerationError(bookId, GenerationStep.CHAPTERS, error);
       throw error;
     }
@@ -427,6 +1229,18 @@ export class BookGenerationOrchestrator {
     // Final supervision pass
     await this.runSupervisionPass(bookId);
 
+    // NEW: Final checkpoint before completion
+    await this.saveCheckpoint(bookId, {
+      bookId,
+      storyBible: this.storyBible,
+      qualityPlan: this.qualityPlan,
+      completedChapters: book.chapters.map(c => c.chapterNumber),
+      completedSections: {},
+      failedSections: this.getFailedSections(bookId),
+      timestamp: new Date(),
+      version: '1.0'
+    });
+
     // Mark book as complete
     await prisma.book.update({
       where: { id: bookId },
@@ -442,10 +1256,78 @@ export class BookGenerationOrchestrator {
       progress: 100,
       status: 'completed'
     });
+
+    // NEW: Clear checkpoint after successful completion
+    await this.clearCheckpoint(bookId);
+
+    // NEW: Clear failed sections queue
+    this.clearFailedSections(bookId);
+
+    console.log('✅ Book generation completed successfully!');
   }
 
   /**
-   * Generate content for a single chapter
+   * NEW: Get complete story memory data for a book
+   */
+  async getStoryMemoryData(bookId: string): Promise<any> {
+    try {
+      const storyMemory = await prisma.storyMemory.findUnique({
+        where: { bookId },
+        include: {
+          characters: true,
+          locations: true,
+          timeline: {
+            orderBy: { createdAt: 'asc' }
+          }
+        }
+      });
+
+      if (!storyMemory) {
+        return null;
+      }
+
+      return {
+        id: storyMemory.id,
+        themes: storyMemory.themes,
+        worldRules: storyMemory.worldRules,
+        characters: storyMemory.characters.map(char => ({
+          id: char.id,
+          name: char.name,
+          role: char.role,
+          description: char.description,
+          personality: char.personality,
+          backstory: char.backstory,
+          arc: char.arc,
+          firstAppearance: char.firstAppearance,
+          relationships: char.relationships
+        })),
+        locations: storyMemory.locations.map(loc => ({
+          id: loc.id,
+          name: loc.name,
+          description: loc.description,
+          importance: loc.importance,
+          firstMention: loc.firstMention
+        })),
+        timeline: storyMemory.timeline.map(event => ({
+          id: event.id,
+          title: event.title,
+          description: event.description,
+          chapterReference: event.chapterReference,
+          importance: event.importance,
+          createdAt: event.createdAt
+        })),
+        createdAt: storyMemory.createdAt,
+        updatedAt: storyMemory.updatedAt
+      };
+
+    } catch (error) {
+      console.error('Error fetching story memory data:', error);
+      return null;
+    }
+  }
+
+  /**
+   * FIXED: Generate content for a single chapter with proper word count distribution
    */
   private async generateChapterContent(
     bookId: string,
@@ -453,127 +1335,584 @@ export class BookGenerationOrchestrator {
     settings: BookSettings
   ): Promise<void> {
     try {
+      console.log(`🔄 Starting chapter generation for chapter ${chapterId}`);
+      
       // Mark chapter as generating
       await prisma.chapter.update({
         where: { id: chapterId },
         data: { status: 'GENERATING' }
       });
 
-      // Get book and chapter context
-      const book = await prisma.book.findUnique({
-        where: { id: bookId },
-        include: {
-          outline: true,
-          chapters: {
-            where: { id: chapterId },
-            include: {
-              sections: true
-            }
-          }
+      // Get comprehensive chapter context
+      const chapterContext = await this.getChapterContext(bookId, chapterId, settings);
+      
+      if (!chapterContext) {
+        throw new Error('Chapter context not found');
+      }
+
+      // FIXED: Calculate proper word distribution
+      const chapterWordTarget = this.calculateChapterWordTarget(
+        chapterContext.chapter,
+        chapterContext.allChapters,
+        settings
+      );
+
+      // FIXED: Calculate optimal sections (should be 2-4 sections per chapter typically)
+      const optimalSections = this.calculateOptimalSections(chapterWordTarget, settings);
+      const targetWordsPerSection = Math.floor(chapterWordTarget / optimalSections);
+
+      console.log(`📊 Chapter ${chapterContext.chapter.chapterNumber}: ${chapterWordTarget} words → ${optimalSections} sections (${targetWordsPerSection} words/section)`);
+
+      // FIXED: Ensure correct section count in database
+      await this.ensureCorrectSectionCount(chapterId, optimalSections);
+
+      // FIXED: Generate sections with proper context and word targeting
+      for (let sectionNum = 1; sectionNum <= optimalSections; sectionNum++) {
+        await this.generateSectionContent(
+          bookId,
+          chapterId,
+          sectionNum,
+          optimalSections,
+          targetWordsPerSection,
+          settings,
+          chapterContext
+        );
+      }
+
+      // Update chapter status
+      await prisma.chapter.update({
+        where: { id: chapterId },
+        data: { 
+          status: 'COMPLETE',
+          updatedAt: new Date()
         }
       });
 
-      const chapter = book?.chapters[0];
-      if (!book || !chapter) {
-        throw new Error('Book or chapter not found');
-      }
+      // NEW: Update story memory with continuity tracking data
+      await this.updateStoryMemoryFromContinuityTracking(bookId, chapterContext.chapter.chapterNumber);
 
-      // Get all chapters to properly calculate word distribution
-      const allChapters = await prisma.chapter.findMany({
-        where: { bookId },
-        orderBy: { chapterNumber: 'asc' }
-      });
-
-      // FIXED: Dynamic section calculation based on chapter's word target
-      const chapterWordTarget = this.calculateChapterWordTarget(chapter, allChapters, settings);
-      const optimalSectionsPerChapter = this.calculateOptimalSections(chapterWordTarget, settings);
-      const targetWordsPerSection = Math.floor(chapterWordTarget / optimalSectionsPerChapter);
-
-      console.log(`Generating Chapter ${chapter.chapterNumber}: ${chapterWordTarget} words in ${optimalSectionsPerChapter} sections (${targetWordsPerSection} words/section)`);
-
-      // Ensure we have the right number of sections in database
-      await this.ensureCorrectSectionCount(chapterId, optimalSectionsPerChapter);
-
-      // Generate sections for this chapter
-      for (let i = 1; i <= optimalSectionsPerChapter; i++) {
-        // Get previous sections for context
-        const previousSections = await prisma.section.findMany({
-          where: {
-            chapter: {
-              bookId,
-              chapterNumber: { lt: chapter.chapterNumber }
-            }
-          },
-          orderBy: [
-            { chapter: { chapterNumber: 'desc' }},
-            { sectionNumber: 'desc' }
-          ],
-          take: 2 // Get last 2 sections for context
-        });
-
-        const sectionContext: SectionContext = {
-          bookTitle: book.title,
-          bookPrompt: book.prompt,
-          backCover: book.backCover || '',
-          outline: book.outline?.summary || '',
-          chapterTitle: chapter.title,
-          chapterSummary: chapter.summary,
-          sectionNumber: i,
-          totalSections: optimalSectionsPerChapter,
-          previousSections: previousSections.map(s => s.content),
-          characters: settings.characterNames,
-          settings
-        };
-
-        // Mark section as generating
-        await prisma.section.updateMany({
-          where: {
-            chapterId,
-            sectionNumber: i
-          },
-          data: { status: 'GENERATING' }
-        });
-
-        // Generate section content with AI
-        const sectionGeneration = await this.writingAgent.generateSection(sectionContext);
-
-        // Update section with generated content
-        await prisma.section.updateMany({
-          where: {
-            chapterId,
-            sectionNumber: i
-          },
-          data: {
-            title: `Section ${i}`,
-            content: sectionGeneration.content,
-            wordCount: sectionGeneration.wordCount,
-            prompt: `Generate section ${i} of chapter "${chapter.title}"`,
-            aiModel: this.config.writingAgent.model,
-            tokensUsed: sectionGeneration.tokensUsed,
-            status: 'COMPLETE'
-          }
-        });
-
-        console.log(`  Section ${i}/${optimalSectionsPerChapter} completed: ${sectionGeneration.wordCount} words`);
-      }
-
-      // Mark chapter as complete
-      await prisma.chapter.update({
-        where: { id: chapterId },
-        data: { status: 'COMPLETE' }
-      });
+      console.log(`✅ Chapter ${chapterContext.chapter.chapterNumber} completed successfully`);
 
     } catch (error) {
-      console.error(`Error generating chapter ${chapterId}:`, error);
+      console.error(`❌ Error generating chapter ${chapterId}:`, error);
       
-      // Mark chapter as needs revision
       await prisma.chapter.update({
         where: { id: chapterId },
-        data: { status: 'NEEDS_REVISION' }
+        data: { 
+          status: 'NEEDS_REVISION',
+          updatedAt: new Date()
+        }
       });
       
       throw error;
     }
+  }
+
+  /**
+   * NEW: Get comprehensive chapter context for generation
+   */
+  private async getChapterContext(bookId: string, chapterId: string, settings: BookSettings) {
+    const book = await prisma.book.findUnique({
+      where: { id: bookId },
+      include: {
+        outline: true,
+        chapters: {
+          where: { id: chapterId }
+        }
+      }
+    });
+
+    if (!book || !book.chapters[0]) {
+      return null;
+    }
+
+    const allChapters = await prisma.chapter.findMany({
+      where: { bookId },
+      orderBy: { chapterNumber: 'asc' }
+    });
+
+    const previousChapters = await prisma.chapter.findMany({
+      where: {
+        bookId,
+        chapterNumber: { lt: book.chapters[0].chapterNumber }
+      },
+      include: {
+        sections: {
+          orderBy: { sectionNumber: 'asc' }
+        }
+      },
+      orderBy: { chapterNumber: 'desc' },
+      take: 2
+    });
+
+    return {
+      book,
+      chapter: book.chapters[0],
+      allChapters,
+      previousChapters,
+      outline: book.outline
+    };
+  }
+
+  /**
+   * ENHANCED: Generate individual section content using specialized writers
+   */
+  private async generateSectionContent(
+    bookId: string,
+    chapterId: string,
+    sectionNumber: number,
+    totalSections: number,
+    targetWords: number,
+    settings: BookSettings,
+    chapterContext: any
+  ): Promise<void> {
+    try {
+      console.log(`  📝 Generating Section ${sectionNumber}/${totalSections} with specialized writer`);
+
+      // Get section data with scene information
+      const sectionData = await prisma.section.findFirst({
+        where: {
+          chapterId,
+          sectionNumber
+        }
+      });
+
+      if (!sectionData) {
+        throw new Error(`Section ${sectionNumber} not found`);
+      }
+
+      // Parse scene data from prompt (stored during chapter creation)
+      let sceneData: any = {};
+      let chapterPlan: any = {};
+      
+      try {
+        const promptData = JSON.parse(sectionData.prompt);
+        sceneData = promptData.sceneData || {};
+        chapterPlan = promptData.chapterContext || {};
+      } catch (parseError) {
+        console.warn('Could not parse scene data, using defaults');
+      }
+
+      // Get previous content for context
+      const previousSections = await this.getPreviousContent(bookId, chapterId, sectionNumber);
+
+      // Get character states from continuity tracker
+      const characterStates = await this.getCharacterStates(chapterContext.chapter.chapterNumber);
+
+      // NEW: Get quality enhancement elements for this section
+      const qualityElements = this.getQualityElementsForSection(
+        chapterContext.chapter.chapterNumber,
+        sectionNumber
+      );
+
+      // Build scene context for specialized writer
+      const sceneContext: SceneContext = {
+        sceneType: this.determineSceneType(sceneData),
+        chapterTitle: chapterContext.chapter.title,
+        sceneNumber: sectionNumber,
+        totalScenes: totalSections,
+        purpose: sceneData.purpose || `Section ${sectionNumber} of ${chapterContext.chapter.title}`,
+        setting: sceneData.setting || chapterPlan.setting || 'Story setting',
+        characters: sceneData.characters || chapterContext.chapter.characters || ['Protagonist'],
+        conflict: sceneData.conflict || 'Character faces challenges',
+        outcome: sceneData.outcome || 'Scene advances the story',
+        wordTarget: sceneData.wordTarget || targetWords,
+        mood: sceneData.mood || settings.tone,
+        previousContent: previousSections.length > 0 ? previousSections[0] : undefined,
+        researchContext: chapterPlan.researchFocus || [],
+        characterStates: characterStates,
+        // NEW: Add quality enhancement elements
+        narrativeVoice: qualityElements.narrativeVoice,
+        emotionalTone: qualityElements.emotionalBeat,
+        foreshadowing: qualityElements.foreshadowing,
+        thematicElements: qualityElements.themes
+      };
+
+      console.log(`    🎭 Using specialized writer for: ${sceneContext.sceneType} scene (emotional tone: ${qualityElements.emotionalBeat?.emotionType})`);
+
+      // NEW: Rate limiting before API call
+      const estimatedTokens = RateLimiter.estimateRequestTokens(
+        this.config.writingAgent.model,
+        JSON.stringify(sceneContext),
+        4000 // Default max tokens for writing agent
+      );
+
+      await this.rateLimiter.requestPermission({
+        model: this.config.writingAgent.model,
+        estimatedTokens,
+        priority: 'normal'
+      });
+
+      // Generate content using specialized writer with quality enhancements
+      const sceneResult: SceneGeneration = await this.writerDirector.writeScene(sceneContext);
+
+      // NEW: Record actual token usage for rate limiting
+      this.rateLimiter.recordUsage(this.config.writingAgent.model, sceneResult.tokensUsed);
+
+      // NEW: Add scene transition if this isn't the first section
+      let finalSceneContent = sceneResult.content;
+      if (sectionNumber > 1 && previousSections.length > 0) {
+        console.log(`    🌉 Adding scene transition...`);
+        
+        const transition = await this.transitionEnhancer.createTransition(
+          previousSections[0],
+          {
+            setting: sceneContext.setting,
+            characters: sceneContext.characters,
+            timeChange: qualityElements.timeChange || 'Scene continues',
+            mood: sceneContext.mood
+          },
+          qualityElements.transitionType || 'bridge-paragraph'
+        );
+        
+        finalSceneContent = `${transition}\n\n${sceneResult.content}`;
+      }
+
+      // QUALITY GATE: Check with continuity inspector
+      const consistencyCheck = await this.continuityAgent.checkChapterConsistency(
+        chapterContext.chapter.chapterNumber,
+        finalSceneContent,
+        sceneContext.purpose,
+        chapterPlan.researchFocus || []
+      );
+
+      // NEW: Supervision check for quality issues
+      let supervisionScore = 85; // Default if supervision fails
+      try {
+        const supervisionReview = await this.supervisionAgent.reviewChapter(
+          chapterContext.chapter.chapterNumber,
+          chapterContext.chapter.title,
+          finalSceneContent,
+          sceneContext.purpose,
+          [],
+          previousSections.length > 0 ? previousSections[0].substring(0, 500) : undefined
+        );
+        
+        supervisionScore = supervisionReview.overallScore;
+        
+        if (supervisionReview.flaggedForReview) {
+          console.warn(`    ⚠️ Section flagged by supervision (score: ${supervisionScore}/100)`);
+          console.warn(`    Issues: ${supervisionReview.issues.map(i => i.description).join(', ')}`);
+        }
+      } catch (error) {
+        console.warn('    ⚠️ Supervision check failed, continuing with default score');
+      }
+
+      // Apply proofreading with narrative voice consistency
+      let finalContent = finalSceneContent;
+      let finalWordCount = this.countWords(finalSceneContent);
+
+      if (consistencyCheck.overallScore >= 80) {
+        console.log(`    ✨ Applying proofreader polish with narrative voice consistency (consistency: ${consistencyCheck.overallScore}/100)`);
+        
+        const polishedContent = await this.proofreaderAgent.quickPolish(
+          finalSceneContent,
+          settings
+        );
+        
+        finalContent = polishedContent;
+        finalWordCount = this.countWords(polishedContent);
+      } else {
+        console.warn(`    ⚠️ Consistency score low (${consistencyCheck.overallScore}/100), skipping polish`);
+      }
+
+      // NEW: Handle failed sections based on quality scores
+      const overallQualityScore = Math.round((consistencyCheck.overallScore + supervisionScore) / 2);
+      
+      if (overallQualityScore < 60) {
+        // Add to failed sections queue
+        this.addFailedSection({
+          bookId,
+          chapterId,
+          sectionNumber,
+          reason: `Low quality score: ${overallQualityScore}/100 (consistency: ${consistencyCheck.overallScore}, supervision: ${supervisionScore})`,
+          timestamp: new Date(),
+          retryCount: 0,
+          metadata: {
+            consistencyScore: consistencyCheck.overallScore,
+            qualityScore: supervisionScore
+          }
+        });
+        
+        console.warn(`    💀 Section quality too low (${overallQualityScore}/100), added to failed queue`);
+      }
+
+      // Update section in database with quality information
+      await prisma.section.updateMany({
+        where: {
+          chapterId,
+          sectionNumber
+        },
+        data: {
+          title: `Scene ${sectionNumber}: ${sceneContext.purpose}`,
+          content: finalContent,
+          wordCount: finalWordCount,
+          prompt: `Specialized Writer (${sceneResult.sceneType}) - Target: ${targetWords} words - Emotional: ${qualityElements.emotionalBeat?.emotionType} - Consistency: ${consistencyCheck.overallScore}/100`,
+          aiModel: `${this.config.writingAgent.model} (${sceneResult.sceneType}-specialized + quality-enhanced)`,
+          tokensUsed: sceneResult.tokensUsed,
+          status: 'COMPLETE',
+          updatedAt: new Date()
+        }
+      });
+
+      console.log(`    ✅ Section ${sectionNumber} completed: ${finalWordCount} words (${sceneResult.sceneType} scene, emotion: ${qualityElements.emotionalBeat?.emotionType}, quality: ${consistencyCheck.overallScore}/100)`);
+
+    } catch (error) {
+      console.error(`    ❌ Error generating section ${sectionNumber}:`, error);
+      
+      // Fallback to basic writing agent if specialized writing fails
+      await this.generateSectionWithFallback(bookId, chapterId, sectionNumber, targetWords, settings, chapterContext);
+    }
+  }
+
+  /**
+   * NEW: Determine scene type from scene data
+   */
+  private determineSceneType(sceneData: any): SceneContext['sceneType'] {
+    if (!sceneData) return 'description';
+    
+    const purpose = (sceneData.purpose || '').toLowerCase();
+    const conflict = (sceneData.conflict || '').toLowerCase();
+    const mood = (sceneData.mood || '').toLowerCase();
+    
+    // Action scenes
+    if (conflict.includes('fight') || conflict.includes('chase') || conflict.includes('battle') || 
+        purpose.includes('action') || mood.includes('intense')) {
+      return 'action';
+    }
+    
+    // Dialogue scenes
+    if (purpose.includes('conversation') || purpose.includes('dialogue') || 
+        conflict.includes('argument') || conflict.includes('discussion')) {
+      return 'dialogue';
+    }
+    
+    // Emotional scenes
+    if (mood.includes('emotional') || mood.includes('touching') || 
+        purpose.includes('character development') || purpose.includes('introspection')) {
+      return 'emotion';
+    }
+    
+    // Default to atmospheric/description
+    return 'description';
+  }
+
+  /**
+   * NEW: Get previous section content for context
+   */
+  private async getPreviousContent(bookId: string, chapterId: string, currentSection: number): Promise<string[]> {
+    const previousSections = await prisma.section.findMany({
+      where: {
+        OR: [
+          // Previous sections in this chapter
+          { chapterId, sectionNumber: { lt: currentSection } },
+          // Last section from previous chapter
+          {
+            chapter: {
+              bookId,
+              chapterNumber: { lt: await this.getChapterNumber(chapterId) }
+            }
+          }
+        ]
+      },
+      orderBy: [
+        { chapter: { chapterNumber: 'desc' } },
+        { sectionNumber: 'desc' }
+      ],
+      take: 2
+    });
+
+    return previousSections.map(s => s.content).filter(Boolean);
+  }
+
+  /**
+   * NEW: Get character states from continuity tracker
+   */
+  private async getCharacterStates(chapterNumber: number): Promise<{ [character: string]: string }> {
+    try {
+      const trackerState = this.continuityAgent.getTrackerState();
+      const characterStates: { [character: string]: string } = {};
+      
+      trackerState.characters.forEach(char => {
+        if (char.lastSeen <= chapterNumber) {
+          characterStates[char.name] = `${char.emotionalState} - ${char.currentLocation}`;
+        }
+      });
+      
+      return characterStates;
+    } catch (error) {
+      console.warn('Could not get character states:', error);
+      return {};
+    }
+  }
+
+  /**
+   * NEW: Get chapter number from chapter ID
+   */
+  private async getChapterNumber(chapterId: string): Promise<number> {
+    const chapter = await prisma.chapter.findUnique({
+      where: { id: chapterId },
+      select: { chapterNumber: true }
+    });
+    return chapter?.chapterNumber || 1;
+  }
+
+  /**
+   * NEW: Fallback section generation using basic writing agent
+   */
+  private async generateSectionWithFallback(
+    bookId: string,
+    chapterId: string,
+    sectionNumber: number,
+    targetWords: number,
+    settings: BookSettings,
+    chapterContext: any
+  ): Promise<void> {
+    console.log(`    🔄 Using fallback writer for section ${sectionNumber}`);
+    
+    try {
+      // Get previous sections for context
+      const previousSections = await this.getPreviousContent(bookId, chapterId, sectionNumber);
+
+      // Build basic section context
+      const sectionContext: SectionContext = {
+        bookTitle: chapterContext.book.title,
+        bookPrompt: chapterContext.book.prompt,
+        backCover: chapterContext.book.backCover || '',
+        outline: chapterContext.outline?.summary || '',
+        chapterTitle: chapterContext.chapter.title,
+        chapterSummary: chapterContext.chapter.summary,
+        sectionNumber,
+        totalSections: await this.getTotalSections(chapterId),
+        previousSections: previousSections,
+        characters: settings.characterNames,
+        settings: {
+          ...settings,
+          wordCount: targetWords
+        }
+      };
+
+      // Generate with basic writing agent
+      const sectionResult = await this.writingAgent.generateSection(sectionContext);
+
+      // NEW: Check prose validation severity
+      let sectionStatus: 'COMPLETE' | 'NEEDS_REVISION' = 'COMPLETE';
+      let proseSeverity: 'low' | 'medium' | 'high' | 'critical' = 'low';
+      let proseWarnings: string[] = [];
+      let proseSuggestions: string[] = [];
+
+      // Extract prose validation from warnings if available
+      // Note: This assumes the WritingAgent has been updated to include prose validation
+      if (sectionResult.warnings && sectionResult.warnings.length > 0) {
+        proseWarnings = sectionResult.warnings;
+        
+        // Determine severity based on warning content
+        const criticalWarnings = sectionResult.warnings.filter(w => 
+          w.includes('Excessive') || w.includes('Critical') || w.includes('critical')
+        );
+        const highWarnings = sectionResult.warnings.filter(w => 
+          w.includes('High') || w.includes('high') || w.includes('weakens prose')
+        );
+        const mediumWarnings = sectionResult.warnings.filter(w => 
+          w.includes('Medium') || w.includes('medium') || w.includes('Moderate')
+        );
+        
+        if (criticalWarnings.length > 0) {
+          proseSeverity = 'critical';
+        } else if (highWarnings.length > 0) {
+          proseSeverity = 'high';
+        } else if (mediumWarnings.length > 0) {
+          proseSeverity = 'medium';
+        } else if (proseWarnings.length > 0) {
+          proseSeverity = 'low';
+        }
+      }
+
+      // NEW: Handle prose validation failures
+      if (proseSeverity === 'high' || proseSeverity === 'critical') {
+        console.warn(`    ⚠️ Prose validation failed for section ${sectionNumber} (severity: ${proseSeverity})`);
+        console.warn(`    Warnings: ${proseWarnings.join(', ')}`);
+        
+        sectionStatus = 'NEEDS_REVISION';
+        
+        // Add to failed sections queue
+        this.addFailedSection({
+          bookId,
+          chapterId,
+          sectionNumber,
+          reason: `Prose validation failed (severity: ${proseSeverity})`,
+          timestamp: new Date(),
+          retryCount: 0,
+          metadata: {
+            proseSeverity,
+            proseWarnings,
+            proseSuggestions,
+            errorMessage: `Prose quality issues detected: ${proseWarnings.join('; ')}`
+          }
+        });
+      } else if (proseSeverity === 'medium') {
+        console.warn(`    ⚠️ Prose validation shows medium severity issues for section ${sectionNumber}`);
+        console.warn(`    Warnings: ${proseWarnings.join(', ')}`);
+      }
+
+      // Update section in database
+      await prisma.section.updateMany({
+        where: {
+          chapterId,
+          sectionNumber
+        },
+        data: {
+          title: `Section ${sectionNumber}`,
+          content: sectionResult.content,
+          wordCount: sectionResult.wordCount,
+          prompt: `Fallback Writer - Target: ${targetWords} words - Prose Quality: ${proseSeverity}`,
+          aiModel: `${this.config.writingAgent.model} (fallback)`,
+          tokensUsed: sectionResult.tokensUsed,
+          status: sectionStatus,
+          updatedAt: new Date()
+        }
+      });
+
+      const statusMessage = sectionStatus === 'NEEDS_REVISION' 
+        ? `needs revision (prose: ${proseSeverity})`
+        : `completed (prose: ${proseSeverity})`;
+      
+      console.log(`    ⚠️ Fallback section ${sectionNumber} ${statusMessage}: ${sectionResult.wordCount} words`);
+
+    } catch (fallbackError) {
+      console.error(`    💥 Fallback generation also failed:`, fallbackError);
+      
+      // Mark section as failed
+      await prisma.section.updateMany({
+        where: {
+          chapterId,
+          sectionNumber
+        },
+        data: {
+          status: 'NEEDS_REVISION',
+          updatedAt: new Date()
+        }
+      });
+      
+      throw fallbackError;
+    }
+  }
+
+  /**
+   * NEW: Get total sections for a chapter
+   */
+  private async getTotalSections(chapterId: string): Promise<number> {
+    const sectionCount = await prisma.section.count({
+      where: { chapterId }
+    });
+    return sectionCount;
+  }
+
+  /**
+   * NEW: Count words in text
+   */
+  private countWords(text: string): number {
+    return text.trim().split(/\s+/).length;
   }
 
   /**
@@ -690,14 +2029,77 @@ export class BookGenerationOrchestrator {
       status: 'processing'
     });
 
-    // TODO: Implement supervision agent
-    // For now, just mark as complete
-    
-    await this.updateBookProgress(bookId, {
-      step: GenerationStep.SUPERVISION,
-      progress: 98,
-      status: 'completed'
-    });
+    console.log('🔍 Starting comprehensive supervision pass...');
+
+    try {
+      // Get all completed chapters
+      const chapters = await prisma.chapter.findMany({
+        where: { bookId, status: 'COMPLETE' },
+        include: { sections: true },
+        orderBy: { chapterNumber: 'asc' }
+      });
+
+      const chapterReviews: ChapterReview[] = [];
+      
+      // Review each chapter
+      for (const chapter of chapters) {
+        const chapterContent = chapter.sections
+          .sort((a, b) => a.sectionNumber - b.sectionNumber)
+          .map(s => s.content)
+          .join('\n\n');
+
+        if (chapterContent.trim()) {
+          const review = await this.supervisionAgent.reviewChapter(
+            chapter.chapterNumber,
+            chapter.title,
+            chapterContent,
+            chapter.summary,
+            [], // Character arcs TODO: implement
+            chapterReviews.length > 0 ? chapterReviews[chapterReviews.length - 1].chapterTitle : undefined
+          );
+
+          chapterReviews.push(review);
+          console.log(`  📊 Chapter ${chapter.chapterNumber} review: ${review.overallScore}/100`);
+        }
+      }
+
+      // Get overall book recommendations
+      const bookRecommendations = await this.supervisionAgent.getBookRecommendations(
+        chapterReviews,
+        [] // Arc progress TODO: implement
+      );
+
+      // Log supervision results
+      const avgScore = chapterReviews.reduce((sum, r) => sum + r.overallScore, 0) / chapterReviews.length;
+      const flaggedChapters = chapterReviews.filter(r => r.flaggedForReview);
+      
+      console.log(`📈 Supervision Results:`);
+      console.log(`  Overall Score: ${Math.round(avgScore)}/100`);
+      console.log(`  Flagged Chapters: ${flaggedChapters.length}/${chapterReviews.length}`);
+      console.log(`  Recommendations: ${bookRecommendations.length}`);
+      
+      if (bookRecommendations.length > 0) {
+        console.log(`  📝 Key Recommendations:`);
+        bookRecommendations.forEach(rec => console.log(`    • ${rec}`));
+      }
+
+      // NEW: Save supervision results to database or checkpoint
+      await this.updateBookProgress(bookId, {
+        step: GenerationStep.SUPERVISION,
+        progress: 98,
+        status: 'completed'
+      });
+
+    } catch (error) {
+      console.error('Supervision pass failed:', error);
+      
+      // Continue with generation even if supervision fails
+      await this.updateBookProgress(bookId, {
+        step: GenerationStep.SUPERVISION,
+        progress: 98,
+        status: 'completed'
+      });
+    }
   }
 
   /**
@@ -802,6 +2204,49 @@ export class BookGenerationOrchestrator {
     }
     
     return Math.floor(baseWordsPerChapter * multiplier);
+  }
+
+  /**
+   * NEW: Get quality enhancement elements for a specific section
+   */
+  private getQualityElementsForSection(chapterNumber: number, sectionNumber: number) {
+    const elements: any = {
+      narrativeVoice: this.qualityPlan?.narrativeVoice || null,
+      emotionalBeat: null,
+      foreshadowing: null,
+      themes: [],
+      transitionType: 'bridge-paragraph',
+      timeChange: 'Scene continues'
+    };
+
+    if (this.qualityPlan) {
+      // Find emotional beat for this chapter/section
+      elements.emotionalBeat = this.qualityPlan.emotionalPacing.find(
+        beat => beat.chapter === chapterNumber && beat.section === sectionNumber
+      ) || this.qualityPlan.emotionalPacing.find(
+        beat => beat.chapter === chapterNumber
+      );
+
+      // Find any foreshadowing elements that should be planted in this chapter
+      elements.foreshadowing = this.qualityPlan.foreshadowingPlan.find(
+        foreshadow => foreshadow.plantChapter === chapterNumber
+      );
+
+      // Get thematic elements for this chapter
+      const subtextLayer = this.qualityPlan.subtextLayers.find(
+        layer => layer.chapter === chapterNumber
+      );
+      elements.themes = subtextLayer?.themes || [];
+
+      // Determine transition type based on section position
+      if (sectionNumber === 1) {
+        elements.transitionType = 'scene-break';
+      } else if (sectionNumber > 1) {
+        elements.transitionType = 'bridge-paragraph';
+      }
+    }
+
+    return elements;
   }
 
   /**

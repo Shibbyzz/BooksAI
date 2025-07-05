@@ -250,3 +250,11 @@ export interface GenerationProgress {
   status: 'queued' | 'processing' | 'paused' | 'completed' | 'error'
   error?: string
 }
+
+// Research types - re-exported from validators for backwards compatibility
+export type {
+  ResearchTopic,
+  ResearchResult,
+  ResearchTopics,
+  ComprehensiveResearch
+} from '../lib/ai/validators/research';

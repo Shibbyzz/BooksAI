@@ -1,11 +1,41 @@
 import { generateAIText } from '@/lib/openai';
 import type { BookSettings } from '@/types';
-import type { ComprehensiveResearch } from './research-agent';
+import type { ComprehensiveResearch } from '../validators/research';
+import fs from 'fs/promises';
+import path from 'path';
+
+// Import prompt builders
+import {
+  buildCharacterPrompt,
+  buildTimelinePrompt,
+  buildWorldbuildingPrompt,
+  buildResearchPrompt,
+  buildTrackerUpdatePrompt,
+  buildFallbackPrompt,
+  CONSISTENCY_CATEGORIES,
+  type ConsistencyCategory,
+  type ContinuityPromptConfig
+} from '../prompts/continuity';
+
+// Import validators
+import {
+  safeConsistencyIssuesValidator,
+  safeTrackerUpdatesValidator,
+  logValidationError,
+  type ValidationResult,
+  type ConsistencyIssuesResponse,
+  type TrackerUpdates,
+  type ConsistencyIssue
+} from '../validators/continuity';
 
 export interface ContinuityInspectorConfig {
   model: string;
   temperature: number;
   maxTokens: number;
+  maxRetries: number;
+  retryDelay: number;
+  maxContentLength: number;
+  parsingRetries: number;
 }
 
 export interface CharacterState {
@@ -42,32 +72,93 @@ export interface ConsistencyTracker {
   worldBuilding: { element: string; description: string; chapters: number[] }[];
 }
 
-export interface ConsistencyIssue {
-  type: 'character' | 'plot' | 'timeline' | 'research' | 'worldbuilding';
-  severity: 'critical' | 'major' | 'minor';
-  description: string;
-  chapters: number[];
-  suggestion: string;
-  conflictingElements: string[];
+// ConsistencyIssue type is now imported from validators
+
+export interface ContinuityTrace {
+  chapterNumber: number;
+  processingSteps: string[];
+  aiResponses: { [key: string]: string };
+  parseErrors: string[];
+  retryAttempts: number;
+  contentLength: number;
+  issuesFound: number;
+  processingTime: number;
 }
 
 export interface ConsistencyReport {
   overallScore: number; // 0-100
+  categoryScores: { [category: string]: number };
   issues: ConsistencyIssue[];
   successfulElements: string[];
   recommendations: string[];
+  trace?: ContinuityTrace;
 }
+
+// Category check runner interface
+interface CategoryCheckRunner {
+  category: ConsistencyCategory;
+  runner: (chapterNumber: number, content: string, researchUsed: string[], trace: ContinuityTrace) => Promise<ConsistencyIssue[]>;
+}
+
+// Generic prompt builder type
+type PromptBuilder = (chapterNumber: number, content: string, ...args: any[]) => string;
+
+// NAMING SUGGESTIONS FOR FUTURE IMPROVEMENTS:
+// 1. CategoryCheckRunner -> ConsistencyCheckRunner (more descriptive)
+// 2. ContinuityTrace -> ConsistencyCheckTrace (clearer purpose)
+// 3. runConsistencyCheck -> runCategoryConsistencyCheck (more specific)
+// 4. parseConsistencyIssues -> transformIssuesResponse (clearer transformation)
+// 5. memoizedData -> cachedComputations (more descriptive)
+// 6. categoryRunners -> consistencyCheckRunners (more descriptive)
+// 7. promptConfig -> promptSettings (clearer intent)
+// 8. trackerFilePath -> persistenceFilePath (more descriptive)
+
+// Scoring weights for different issue types
+const ISSUE_WEIGHTS = {
+  timeline: 1.5,
+  character: 1.3,
+  plot: 1.2,
+  research: 1.0,
+  worldbuilding: 0.8,
+  relationship: 0.6
+};
+
+const SEVERITY_MULTIPLIERS = {
+  critical: 25,
+  major: 15,
+  minor: 5
+};
 
 export class ContinuityInspectorAgent {
   private config: ContinuityInspectorConfig;
   private tracker: ConsistencyTracker;
+  private trackerFilePath: string;
+  private promptConfig: ContinuityPromptConfig;
+  private categoryRunners: CategoryCheckRunner[];
+  
+  // Caching for performance
+  private characterLookupCache: Map<string, CharacterState> = new Map();
+  private worldBuildingCache: Map<string, { element: string; description: string; chapters: number[] }> = new Map();
+  private memoizedData: {
+    recentTimeline?: TimelineEntry[];
+    activeCharacters?: CharacterState[];
+    lastCacheUpdate?: number;
+  } = {};
 
   constructor(config?: Partial<ContinuityInspectorConfig>) {
     this.config = {
       model: 'gpt-4o',
       temperature: 0.0, // Very low temperature for factual consistency
       maxTokens: 4000,
+      maxRetries: 3,
+      retryDelay: 1000,
+      maxContentLength: 8000,
+      parsingRetries: 2,
       ...config
+    };
+
+    this.promptConfig = {
+      maxContentLength: this.config.maxContentLength
     };
 
     this.tracker = {
@@ -78,6 +169,361 @@ export class ContinuityInspectorAgent {
       researchReferences: [],
       worldBuilding: []
     };
+
+    this.trackerFilePath = path.join(process.cwd(), 'data', 'continuity-tracker.json');
+    
+    // Initialize category runners
+    this.categoryRunners = [
+      {
+        category: 'character',
+        runner: this.runCharacterConsistencyCheck.bind(this)
+      },
+      {
+        category: 'timeline',
+        runner: this.runTimelineConsistencyCheck.bind(this)
+      },
+      {
+        category: 'worldbuilding',
+        runner: this.runWorldbuildingConsistencyCheck.bind(this)
+      },
+      {
+        category: 'research',
+        runner: this.runResearchConsistencyCheck.bind(this)
+      }
+    ];
+  }
+
+  /**
+   * Retry utility with exponential backoff
+   */
+  private async runWithRetry<T>(
+    operation: () => Promise<T>,
+    context: string,
+    maxRetries: number = this.config.maxRetries
+  ): Promise<T> {
+    let lastError: Error | null = null;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`🔄 ${context} - Attempt ${attempt}/${maxRetries}`);
+        return await operation();
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        console.error(`❌ ${context} - Attempt ${attempt} failed:`, lastError.message);
+        
+        if (attempt < maxRetries) {
+          const delay = this.config.retryDelay * Math.pow(2, attempt - 1);
+          console.log(`⏱️ ${context} - Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+    
+    throw new Error(`${context} - All ${maxRetries} attempts failed. Last error: ${lastError?.message}`);
+  }
+
+  /**
+   * Generate AI text with parsing retry logic
+   */
+  private async generateWithParsingRetry<T>(
+    prompt: string,
+    context: string,
+    validator: (text: string) => T,
+    trace: ContinuityTrace
+  ): Promise<T> {
+    let lastError: Error | null = null;
+    const startAttempt = trace.retryAttempts;
+    
+    for (let attempt = 1; attempt <= this.config.parsingRetries + 1; attempt++) {
+      trace.retryAttempts++;
+      
+      try {
+        const currentPrompt = attempt === 1 ? prompt : buildFallbackPrompt(prompt);
+        
+        console.log(`🎯 ${context} - Parsing attempt ${attempt}/${this.config.parsingRetries + 1}`);
+        
+        const response = await this.runWithRetry(
+          () => generateAIText(currentPrompt, {
+            model: this.config.model,
+            temperature: this.config.temperature,
+            maxTokens: this.config.maxTokens,
+            system: 'You are a story continuity analyst. Always respond with valid JSON only.'
+          }),
+          context
+        );
+        
+        const validated = validator(response.text);
+        console.log(`✅ ${context} - Validation successful`);
+        return validated;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        console.warn(`⚠️ ${context} - Parsing attempt ${attempt} failed:`, lastError.message);
+        
+        if (attempt > this.config.parsingRetries) {
+          const errorMsg = `${context} - All parsing attempts failed: ${lastError.message}`;
+          trace.parseErrors.push(errorMsg);
+          console.error(`🚨 ${errorMsg}`);
+          throw new Error(errorMsg);
+        }
+      }
+    }
+    
+    throw lastError || new Error(`${context} - All parsing attempts failed`);
+  }
+
+  /**
+   * Generic consistency check runner to reduce duplication
+   */
+  private async runGenericConsistencyCheck(
+    category: ConsistencyCategory,
+    chapterNumber: number,
+    content: string,
+    researchUsed: string[],
+    trace: ContinuityTrace,
+    promptBuilder: PromptBuilder,
+    ...promptArgs: any[]
+  ): Promise<ConsistencyIssue[]> {
+    const categoryInfo = CONSISTENCY_CATEGORIES[category];
+    const context = `${categoryInfo.name} check`;
+    
+    try {
+      const prompt = promptBuilder(chapterNumber, content, ...promptArgs);
+      
+      const response = await this.generateWithParsingRetry(
+        prompt,
+        context,
+        safeConsistencyIssuesValidator,
+        trace
+      );
+      
+      trace.aiResponses[category] = JSON.stringify(response);
+      return this.parseConsistencyIssues(response, chapterNumber);
+    } catch (error) {
+      const errorMsg = `${context} failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      trace.parseErrors.push(errorMsg);
+      console.error(`❌ ${errorMsg}`);
+      return [];
+    }
+  }
+
+  /**
+   * Run a specific category consistency check
+   */
+  private async runConsistencyCheck(
+    category: ConsistencyCategory,
+    chapterNumber: number,
+    content: string,
+    researchUsed: string[],
+    trace: ContinuityTrace
+  ): Promise<ConsistencyIssue[]> {
+    const runner = this.categoryRunners.find(r => r.category === category);
+    if (!runner) {
+      console.warn(`⚠️ No runner found for category: ${category}`);
+      return [];
+    }
+
+    const categoryInfo = CONSISTENCY_CATEGORIES[category];
+    console.log(`🔍 Running ${categoryInfo.name} check for Chapter ${chapterNumber}`);
+    
+    try {
+      const issues = await runner.runner(chapterNumber, content, researchUsed, trace);
+      console.log(`✅ ${categoryInfo.name} check complete - ${issues.length} issues found`);
+      return issues;
+    } catch (error) {
+      const errorMsg = `${categoryInfo.name} check failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      trace.parseErrors.push(errorMsg);
+      console.error(`❌ ${errorMsg}`);
+      return [];
+    }
+  }
+
+  /**
+   * Character consistency check runner
+   */
+  private async runCharacterConsistencyCheck(
+    chapterNumber: number,
+    content: string,
+    researchUsed: string[],
+    trace: ContinuityTrace
+  ): Promise<ConsistencyIssue[]> {
+    const issues: ConsistencyIssue[] = [];
+    
+    for (const character of this.tracker.characters) {
+      if (content.toLowerCase().includes(character.name.toLowerCase())) {
+        try {
+          const prompt = buildCharacterPrompt(character, chapterNumber, content, this.promptConfig);
+          
+          const response = await this.generateWithParsingRetry(
+            prompt,
+            `Character consistency check for ${character.name}`,
+            safeConsistencyIssuesValidator,
+            trace
+          );
+          
+          trace.aiResponses[`character_${character.name}`] = JSON.stringify(response);
+          const characterIssues = this.parseConsistencyIssues(response, chapterNumber);
+          issues.push(...characterIssues);
+        } catch (error) {
+          const errorMsg = `Character check failed for ${character.name}: ${error instanceof Error ? error.message : 'Unknown error'}`;
+          trace.parseErrors.push(errorMsg);
+          console.error(`❌ ${errorMsg}`);
+        }
+      }
+    }
+    
+    return issues;
+  }
+
+  /**
+   * Timeline consistency check runner
+   */
+  private async runTimelineConsistencyCheck(
+    chapterNumber: number,
+    content: string,
+    researchUsed: string[],
+    trace: ContinuityTrace
+  ): Promise<ConsistencyIssue[]> {
+    const recentTimeline = this.getRecentTimeline(5);
+    return this.runGenericConsistencyCheck(
+      'timeline',
+      chapterNumber,
+      content,
+      researchUsed,
+      trace,
+      buildTimelinePrompt,
+      recentTimeline,
+      this.promptConfig
+    );
+  }
+
+  /**
+   * Worldbuilding consistency check runner
+   */
+  private async runWorldbuildingConsistencyCheck(
+    chapterNumber: number,
+    content: string,
+    researchUsed: string[],
+    trace: ContinuityTrace
+  ): Promise<ConsistencyIssue[]> {
+    return this.runGenericConsistencyCheck(
+      'worldbuilding',
+      chapterNumber,
+      content,
+      researchUsed,
+      trace,
+      buildWorldbuildingPrompt,
+      this.tracker.worldBuilding,
+      this.promptConfig
+    );
+  }
+
+  /**
+   * Research consistency check runner
+   */
+  private async runResearchConsistencyCheck(
+    chapterNumber: number,
+    content: string,
+    researchUsed: string[],
+    trace: ContinuityTrace
+  ): Promise<ConsistencyIssue[]> {
+    if (researchUsed.length === 0) {
+      return [];
+    }
+    
+    return this.runGenericConsistencyCheck(
+      'research',
+      chapterNumber,
+      content,
+      researchUsed,
+      trace,
+      buildResearchPrompt,
+      researchUsed,
+      this.tracker.researchReferences,
+      this.promptConfig
+    );
+  }
+
+  /**
+   * Save tracker state to persistent storage
+   */
+  async saveTrackerState(): Promise<void> {
+    try {
+      // Ensure directory exists
+      await fs.mkdir(path.dirname(this.trackerFilePath), { recursive: true });
+      
+      const trackerData = {
+        ...this.tracker,
+        metadata: {
+          savedAt: new Date().toISOString(),
+          version: '1.0'
+        }
+      };
+      
+      await fs.writeFile(this.trackerFilePath, JSON.stringify(trackerData, null, 2));
+      console.log('💾 Tracker state saved successfully');
+    } catch (error) {
+      console.error('❌ Error saving tracker state:', error);
+      throw new Error(`Failed to save tracker state: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Load tracker state from persistent storage
+   */
+  async loadTrackerState(): Promise<void> {
+    try {
+      const data = await fs.readFile(this.trackerFilePath, 'utf-8');
+      const trackerData = JSON.parse(data);
+      
+      // Validate loaded data structure
+      if (!trackerData.characters || !trackerData.plotPoints || !trackerData.timeline) {
+        throw new Error('Invalid tracker data structure');
+      }
+      
+      this.tracker = {
+        characters: trackerData.characters || [],
+        plotPoints: trackerData.plotPoints || [],
+        timeline: trackerData.timeline || [],
+        establishedFacts: trackerData.establishedFacts || [],
+        researchReferences: trackerData.researchReferences || [],
+        worldBuilding: trackerData.worldBuilding || []
+      };
+      
+      // Rebuild caches after loading
+      this.rebuildCharacterCache();
+      this.invalidateCache();
+      
+      console.log('📥 Tracker state loaded successfully');
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+        console.log('📝 No existing tracker state found, starting fresh');
+        return;
+      }
+      
+      console.error('❌ Error loading tracker state:', error);
+      throw new Error(`Failed to load tracker state: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Reset tracker state
+   */
+  resetTracker(): void {
+    this.tracker = {
+      characters: [],
+      plotPoints: [],
+      timeline: [],
+      establishedFacts: [],
+      researchReferences: [],
+      worldBuilding: []
+    };
+    
+    // Clear caches
+    this.characterLookupCache.clear();
+    this.worldBuildingCache.clear();
+    this.invalidateCache();
+    
+    console.log('🔄 Tracker state reset successfully');
   }
 
   /**
@@ -90,7 +536,7 @@ export class ContinuityInspectorAgent {
     settings: BookSettings
   ): Promise<void> {
     try {
-      console.log('Initializing continuity tracking...');
+      console.log('🚀 Initializing continuity tracking...');
       
       // Initialize character states
       this.tracker.characters = characters.map(char => ({
@@ -110,6 +556,24 @@ export class ContinuityInspectorAgent {
         ...research.technicalAspects.flatMap(r => r.facts.slice(0, 2))
       ];
 
+      // Initialize research references
+      this.tracker.researchReferences = [
+        ...research.domainKnowledge.flatMap(r => 
+          r.facts.slice(0, 2).map(fact => ({
+            fact,
+            chapter: 0,
+            context: 'Initial research'
+          }))
+        ),
+        ...research.technicalAspects.flatMap(r => 
+          r.facts.slice(0, 2).map(fact => ({
+            fact,
+            chapter: 0,
+            context: 'Initial research'
+          }))
+        )
+      ];
+
       // Initialize timeline
       this.tracker.timeline = [{
         chapter: 1,
@@ -117,9 +581,12 @@ export class ContinuityInspectorAgent {
         duration: 'Initial'
       }];
 
-      console.log('Continuity tracking initialized successfully');
+      // Save initial state
+      await this.saveTrackerState();
+
+      console.log('✅ Continuity tracking initialized successfully');
     } catch (error) {
-      console.error('Error initializing continuity tracking:', error);
+      console.error('❌ Error initializing continuity tracking:', error);
       throw error;
     }
   }
@@ -133,33 +600,61 @@ export class ContinuityInspectorAgent {
     chapterSummary: string,
     researchUsed: string[]
   ): Promise<ConsistencyReport> {
+    const startTime = Date.now();
+    const trace: ContinuityTrace = {
+      chapterNumber,
+      processingSteps: [],
+      aiResponses: {},
+      parseErrors: [],
+      retryAttempts: 0,
+      contentLength: chapterContent.length,
+      issuesFound: 0,
+      processingTime: 0
+    };
+
     try {
-      console.log(`Checking consistency for chapter ${chapterNumber}...`);
+      console.log(`🔍 Checking consistency for chapter ${chapterNumber}...`);
+      trace.processingSteps.push('Starting consistency check');
       
       // Update tracker with chapter information
-      await this.updateTrackerFromChapter(chapterNumber, chapterContent, chapterSummary, researchUsed);
+      trace.processingSteps.push('Updating tracker from chapter');
+      await this.updateTrackerFromChapter(chapterNumber, chapterContent, chapterSummary, researchUsed, trace);
       
-      // Perform consistency checks
-      const issues = await this.performConsistencyChecks(chapterNumber, chapterContent);
+      // Perform consistency checks using loopable structure
+      trace.processingSteps.push('Performing consistency checks');
+      const issues = await this.performConsistencyChecks(chapterNumber, chapterContent, researchUsed, trace);
+      trace.issuesFound = issues.length;
       
-      // Calculate overall score
-      const overallScore = this.calculateConsistencyScore(issues);
+      // Calculate scores
+      trace.processingSteps.push('Calculating scores');
+      const { overallScore, categoryScores } = this.calculateConsistencyScore(issues, chapterContent.length);
       
       // Generate recommendations
+      trace.processingSteps.push('Generating recommendations');
       const recommendations = this.generateRecommendations(issues, chapterNumber);
+      
+      // Save updated state
+      trace.processingSteps.push('Saving tracker state');
+      await this.saveTrackerState();
+      
+      trace.processingTime = Date.now() - startTime;
       
       const report: ConsistencyReport = {
         overallScore,
+        categoryScores,
         issues,
         successfulElements: this.identifySuccessfulElements(chapterNumber),
-        recommendations
+        recommendations,
+        trace
       };
 
-      console.log(`Consistency check complete. Score: ${overallScore}/100`);
+      console.log(`✅ Consistency check complete. Score: ${overallScore}/100 (${trace.processingTime}ms)`);
       return report;
       
     } catch (error) {
-      console.error('Error checking chapter consistency:', error);
+      trace.processingTime = Date.now() - startTime;
+      trace.parseErrors.push(error instanceof Error ? error.message : 'Unknown error');
+      console.error('❌ Error checking chapter consistency:', error);
       throw new Error(`Consistency check failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
@@ -178,291 +673,288 @@ export class ContinuityInspectorAgent {
     chapterNumber: number,
     content: string,
     summary: string,
-    researchUsed: string[]
+    researchUsed: string[],
+    trace: ContinuityTrace
   ): Promise<void> {
     try {
-      const prompt = `
-Extract consistency tracking information from this chapter:
-
-CHAPTER ${chapterNumber}:
-SUMMARY: ${summary}
-CONTENT: ${content.substring(0, 2000)}... (truncated)
-RESEARCH USED: ${researchUsed.join(', ')}
-
-Extract and identify:
-1. CHARACTER UPDATES: Location changes, physical/emotional state changes, new knowledge gained
-2. PLOT POINTS: Key events, consequences, character impacts
-3. TIME REFERENCES: How much time has passed, time of day, temporal markers
-4. NEW FACTS: World-building elements, research facts mentioned
-5. RELATIONSHIP CHANGES: How character relationships evolve
-
-Focus on information that could create consistency issues if not tracked properly.
-
-Respond in JSON format with these sections.`;
-
-      const response = await generateAIText(prompt, {
-        model: 'gpt-4o-mini', // Use cheaper model for extraction
-        temperature: 0.1,
-        maxTokens: 2000,
-        system: 'You are a story analyst extracting tracking information. Respond with valid JSON only.'
-      });
-
-      const updates = this.parseTrackerUpdates(response.text);
+      const prompt = buildTrackerUpdatePrompt(chapterNumber, content, summary, researchUsed, this.promptConfig);
+      
+      const updates = await this.generateWithParsingRetry(
+        prompt,
+        'Extracting tracker updates',
+        safeTrackerUpdatesValidator,
+        trace
+      );
+      
+      trace.aiResponses['trackerUpdates'] = JSON.stringify(updates);
       this.applyTrackerUpdates(chapterNumber, updates);
       
     } catch (error) {
-      console.error('Error updating tracker:', error);
+      const errorMsg = `Tracker update failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      trace.parseErrors.push(errorMsg);
+      console.error('❌ Error updating tracker:', error);
       // Continue without updates rather than failing
     }
   }
 
   /**
-   * Perform consistency checks for a chapter
+   * Perform consistency checks for a chapter using loopable structure
    */
   private async performConsistencyChecks(
     chapterNumber: number,
-    content: string
+    content: string,
+    researchUsed: string[],
+    trace: ContinuityTrace
   ): Promise<ConsistencyIssue[]> {
     const issues: ConsistencyIssue[] = [];
     
     try {
-      // Character consistency check
-      const characterIssues = await this.checkCharacterConsistency(chapterNumber, content);
-      issues.push(...characterIssues);
-      
-      // Timeline consistency check  
-      const timelineIssues = await this.checkTimelineConsistency(chapterNumber, content);
-      issues.push(...timelineIssues);
+      // Run all consistency checks using the loopable structure
+      for (const category of Object.keys(CONSISTENCY_CATEGORIES) as ConsistencyCategory[]) {
+        trace.processingSteps.push(`Checking ${category} consistency`);
+        const categoryIssues = await this.runConsistencyCheck(category, chapterNumber, content, researchUsed, trace);
+        issues.push(...categoryIssues);
+      }
       
       return issues;
     } catch (error) {
-      console.error('Error performing consistency checks:', error);
+      const errorMsg = `Consistency checks failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      trace.parseErrors.push(errorMsg);
+      console.error('❌ Error performing consistency checks:', error);
       return issues; // Return what we have so far
     }
   }
 
   /**
-   * Check character consistency
+   * Parse consistency issues from response
    */
-  private async checkCharacterConsistency(
-    chapterNumber: number,
-    content: string
-  ): Promise<ConsistencyIssue[]> {
-    const issues: ConsistencyIssue[] = [];
-    
-    for (const character of this.tracker.characters) {
-      if (content.toLowerCase().includes(character.name.toLowerCase())) {
-        const prompt = `
-Check character consistency for ${character.name} in this chapter:
-
-CURRENT CHARACTER STATE:
-- Location: ${character.currentLocation}
-- Physical: ${character.physicalState}
-- Emotional: ${character.emotionalState}
-- Knowledge: ${character.knowledgeState}
-- Last seen: Chapter ${character.lastSeen}
-
-CHAPTER ${chapterNumber} CONTENT:
-${content.substring(0, 1500)}...
-
-Look for consistency issues:
-1. Unexplained location changes
-2. Contradictory physical/emotional states
-3. Knowledge they shouldn't have yet
-4. Personality inconsistencies
-5. Unexplained behavior changes
-
-If issues found, describe them specifically.`;
-
-        const response = await generateAIText(prompt, {
-          model: this.config.model,
-          temperature: this.config.temperature,
-          maxTokens: 800,
-          system: 'You are a continuity editor checking character consistency. Be specific about any issues found.'
-        });
-
-        const characterIssues = this.parseCharacterIssues(response.text, character.name, chapterNumber);
-        issues.push(...characterIssues);
-      }
-    }
-    
-    return issues;
-  }
-
-  /**
-   * Check timeline consistency
-   */
-  private async checkTimelineConsistency(
-    chapterNumber: number,
-    content: string
-  ): Promise<ConsistencyIssue[]> {
-    const recentTimeline = this.tracker.timeline.slice(-3);
-    
-    const prompt = `
-Check timeline consistency:
-
-RECENT TIMELINE:
-${recentTimeline.map(t => 
-  `Ch${t.chapter}: ${t.timeReference} ${t.duration ? `(${t.duration})` : ''}`
-).join('\n')}
-
-CHAPTER ${chapterNumber} CONTENT:
-${content.substring(0, 1000)}...
-
-Look for:
-1. Impossible time progression
-2. Contradictory time references
-3. Characters being in multiple places simultaneously
-4. Inconsistent passage of time
-
-Report specific timeline issues.`;
-
-    const response = await generateAIText(prompt, {
-      model: this.config.model,
-      temperature: this.config.temperature,
-      maxTokens: 800
-    });
-
-    return this.parseTimelineIssues(response.text, chapterNumber);
-  }
-
-  /**
-   * Parse tracker updates from AI response
-   */
-  private parseTrackerUpdates(responseText: string): any {
-    try {
-      let cleanContent = responseText.trim();
-      if (cleanContent.startsWith('```')) {
-        const firstNewline = cleanContent.indexOf('\n');
-        const lastBackticks = cleanContent.lastIndexOf('```');
-        if (firstNewline !== -1 && lastBackticks > firstNewline) {
-          cleanContent = cleanContent.substring(firstNewline + 1, lastBackticks).trim();
-        }
-      }
-      
-      return JSON.parse(cleanContent);
-    } catch (parseError) {
-      console.error('Error parsing tracker updates:', parseError);
-      return {
-        characterUpdates: [],
-        plotPoints: [],
-        timeReferences: [],
-        newFacts: []
-      };
-    }
+  private parseConsistencyIssues(response: ConsistencyIssuesResponse, chapterNumber: number): ConsistencyIssue[] {
+    return response.issues.map(issue => ({
+      type: issue.type,
+      severity: issue.severity,
+      description: issue.description,
+      chapters: [chapterNumber],
+      suggestion: issue.suggestion,
+      conflictingElements: issue.conflictingElements || []
+    }));
   }
 
   /**
    * Apply tracker updates
    */
-  private applyTrackerUpdates(chapterNumber: number, updates: any): void {
+  private applyTrackerUpdates(chapterNumber: number, updates: TrackerUpdates): void {
     try {
       // Update character states
-      if (updates.characterUpdates) {
-        updates.characterUpdates.forEach((update: any) => {
-          const character = this.tracker.characters.find(c => c.name === update.name);
-          if (character) {
-            if (update.location) character.currentLocation = update.location;
-            if (update.physicalState) character.physicalState = update.physicalState;
-            if (update.emotionalState) character.emotionalState = update.emotionalState;
-            if (update.knowledgeState) character.knowledgeState = update.knowledgeState;
-            character.lastSeen = chapterNumber;
-          }
-        });
-      }
-
+      this.updateCharacterStates(updates.characterUpdates, chapterNumber);
+      
       // Add plot points
-      if (updates.plotPoints) {
-        updates.plotPoints.forEach((point: any) => {
-          this.tracker.plotPoints.push({
-            chapter: chapterNumber,
-            event: point.event || 'Chapter event',
-            consequences: point.consequences || [],
-            affectedCharacters: point.affectedCharacters || [],
-            establishedFacts: point.establishedFacts || []
-          });
-        });
-      }
-
+      this.addPlotPoints(updates.plotPoints, chapterNumber);
+      
       // Add timeline entries
-      if (updates.timeReferences) {
-        updates.timeReferences.forEach((time: any) => {
-          this.tracker.timeline.push({
-            chapter: chapterNumber,
-            timeReference: time.reference || 'Time passes',
-            duration: time.duration
-          });
-        });
-      }
-
-      // Add new facts
-      if (updates.newFacts) {
-        this.tracker.establishedFacts.push(...updates.newFacts);
-      }
+      this.addTimelineEntries(updates.timeReferences, chapterNumber);
+      
+      // Add new facts and research references
+      this.addFactsAndReferences(updates.newFacts, chapterNumber);
+      
+      // Add world building elements
+      this.addWorldBuildingElements(updates.worldBuilding, chapterNumber);
       
     } catch (error) {
-      console.error('Error applying tracker updates:', error);
+      console.error('❌ Error applying tracker updates:', error);
     }
   }
 
   /**
-   * Parse consistency issues from AI responses
+   * Update character states with null-safe assignment
    */
-  private parseCharacterIssues(responseText: string, characterName: string, chapterNumber: number): ConsistencyIssue[] {
-    const issues: ConsistencyIssue[] = [];
-    
-    if (responseText.toLowerCase().includes('inconsistency') || responseText.toLowerCase().includes('contradiction')) {
-      issues.push({
-        type: 'character',
-        severity: 'major',
-        description: `Potential character inconsistency for ${characterName} in chapter ${chapterNumber}`,
-        chapters: [chapterNumber],
-        suggestion: 'Review character behavior and state for consistency',
-        conflictingElements: [characterName]
-      });
-    }
-    
-    return issues;
-  }
-
-  private parseTimelineIssues(responseText: string, chapterNumber: number): ConsistencyIssue[] {
-    const issues: ConsistencyIssue[] = [];
-    
-    if (responseText.toLowerCase().includes('timeline') || responseText.toLowerCase().includes('time')) {
-      issues.push({
-        type: 'timeline',
-        severity: 'minor',
-        description: `Timeline issue in chapter ${chapterNumber}`,
-        chapters: [chapterNumber],
-        suggestion: 'Verify time progression and references',
-        conflictingElements: ['timeline']
-      });
-    }
-    
-    return issues;
-  }
-
-  /**
-   * Calculate overall consistency score
-   */
-  private calculateConsistencyScore(issues: ConsistencyIssue[]): number {
-    let score = 100;
-    
-    issues.forEach(issue => {
-      switch (issue.severity) {
-        case 'critical':
-          score -= 20;
-          break;
-        case 'major':
-          score -= 10;
-          break;
-        case 'minor':
-          score -= 3;
-          break;
+  private updateCharacterStates(updates: TrackerUpdates['characterUpdates'], chapterNumber: number): void {
+    updates.forEach(update => {
+      const character = this.getCharacterFromCache(update.name);
+      if (!character) return;
+      
+      // Helper to safely update non-null values
+      const updateField = <T>(field: keyof CharacterState, value: T | null | undefined) => {
+        if (value !== null && value !== undefined) {
+          (character as any)[field] = value;
+        }
+      };
+      
+      updateField('currentLocation', update.location);
+      updateField('physicalState', update.physicalState);
+      updateField('emotionalState', update.emotionalState);
+      updateField('knowledgeState', update.knowledgeState);
+      
+      if (update.relationshipChanges) {
+        character.relationships = { ...character.relationships, ...update.relationshipChanges };
       }
+      character.lastSeen = chapterNumber;
+      
+      // Update cache
+      this.characterLookupCache.set(update.name, character);
     });
     
-    return Math.max(0, score);
+    // Invalidate memoized data when characters are updated
+    this.invalidateCache();
+  }
+
+  /**
+   * Get character from cache or tracker
+   */
+  private getCharacterFromCache(name: string): CharacterState | undefined {
+    if (this.characterLookupCache.has(name)) {
+      return this.characterLookupCache.get(name);
+    }
+    
+    const character = this.tracker.characters.find(c => c.name === name);
+    if (character) {
+      this.characterLookupCache.set(name, character);
+    }
+    return character;
+  }
+
+  /**
+   * Invalidate caches when data changes
+   */
+  private invalidateCache(): void {
+    this.memoizedData = {};
+  }
+
+  /**
+   * Rebuild character cache
+   */
+  private rebuildCharacterCache(): void {
+    this.characterLookupCache.clear();
+    this.tracker.characters.forEach(character => {
+      this.characterLookupCache.set(character.name, character);
+    });
+  }
+
+  /**
+   * Get recent timeline entries (memoized)
+   */
+  private getRecentTimeline(maxEntries: number = 5): TimelineEntry[] {
+    const cacheKey = `recentTimeline_${maxEntries}`;
+    const now = Date.now();
+    
+    if (this.memoizedData.recentTimeline && 
+        this.memoizedData.lastCacheUpdate && 
+        now - this.memoizedData.lastCacheUpdate < 5000) {
+      return this.memoizedData.recentTimeline;
+    }
+    
+    const recentTimeline = this.tracker.timeline.slice(-maxEntries);
+    this.memoizedData.recentTimeline = recentTimeline;
+    this.memoizedData.lastCacheUpdate = now;
+    
+    return recentTimeline;
+  }
+
+  /**
+   * Add plot points to tracker
+   */
+  private addPlotPoints(plotPoints: TrackerUpdates['plotPoints'], chapterNumber: number): void {
+    plotPoints.forEach(point => {
+      this.tracker.plotPoints.push({
+        chapter: chapterNumber,
+        event: point.event,
+        consequences: point.consequences,
+        affectedCharacters: point.affectedCharacters,
+        establishedFacts: point.establishedFacts
+      });
+    });
+  }
+
+  /**
+   * Add timeline entries to tracker
+   */
+  private addTimelineEntries(timeReferences: TrackerUpdates['timeReferences'], chapterNumber: number): void {
+    timeReferences.forEach(time => {
+      this.tracker.timeline.push({
+        chapter: chapterNumber,
+        timeReference: time.reference,
+        duration: time.duration || undefined,
+        absoluteTime: time.absoluteTime || undefined
+      });
+    });
+  }
+
+  /**
+   * Add facts and research references to tracker
+   */
+  private addFactsAndReferences(newFacts: string[], chapterNumber: number): void {
+    this.tracker.establishedFacts.push(...newFacts);
+    
+    newFacts.forEach(fact => {
+      this.tracker.researchReferences.push({
+        fact,
+        chapter: chapterNumber,
+        context: 'Chapter content'
+      });
+    });
+  }
+
+  /**
+   * Add world building elements to tracker
+   */
+  private addWorldBuildingElements(worldBuilding: TrackerUpdates['worldBuilding'], chapterNumber: number): void {
+    worldBuilding.forEach(element => {
+      const existing = this.tracker.worldBuilding.find(w => w.element === element.element);
+      if (existing) {
+        existing.chapters.push(chapterNumber);
+      } else {
+        this.tracker.worldBuilding.push({
+          element: element.element,
+          description: element.description,
+          chapters: [chapterNumber]
+        });
+      }
+    });
+  }
+
+  /**
+   * Calculate overall consistency score with category breakdown
+   */
+  private calculateConsistencyScore(issues: ConsistencyIssue[], contentLength: number): { overallScore: number; categoryScores: { [category: string]: number } } {
+    const categoryScores: { [category: string]: number } = {};
+    const categoryIssues: { [category: string]: ConsistencyIssue[] } = {};
+    
+    // Group issues by category
+    issues.forEach(issue => {
+      if (!categoryIssues[issue.type]) {
+        categoryIssues[issue.type] = [];
+      }
+      categoryIssues[issue.type].push(issue);
+    });
+    
+    // Calculate category scores
+    Object.keys(ISSUE_WEIGHTS).forEach(category => {
+      const categoryIssuesList = categoryIssues[category] || [];
+      let categoryScore = 100;
+      
+      categoryIssuesList.forEach(issue => {
+        const weight = ISSUE_WEIGHTS[issue.type] || 1.0;
+        const severity = SEVERITY_MULTIPLIERS[issue.severity] || 5;
+        categoryScore -= weight * severity;
+      });
+      
+      categoryScores[category] = Math.max(0, categoryScore);
+    });
+    
+    // Calculate overall score
+    let totalDeduction = 0;
+    issues.forEach(issue => {
+      const weight = ISSUE_WEIGHTS[issue.type] || 1.0;
+      const severity = SEVERITY_MULTIPLIERS[issue.severity] || 5;
+      totalDeduction += weight * severity;
+    });
+    
+    // Apply content length normalization (longer content is more likely to have issues)
+    const lengthNormalization = Math.max(1, contentLength / 5000);
+    const normalizedDeduction = totalDeduction / lengthNormalization;
+    
+    const overallScore = Math.max(0, Math.min(100, 100 - normalizedDeduction));
+    
+    return { overallScore, categoryScores };
   }
 
   /**
@@ -472,21 +964,43 @@ Report specific timeline issues.`;
     const recommendations: string[] = [];
     
     if (issues.length === 0) {
-      recommendations.push('Chapter maintains good consistency with previous story elements');
-    } else {
-      const criticalIssues = issues.filter(i => i.severity === 'critical');
-      const majorIssues = issues.filter(i => i.severity === 'major');
-      
-      if (criticalIssues.length > 0) {
-        recommendations.push('Address critical consistency issues before proceeding');
-      }
-      
-      if (majorIssues.length > 0) {
-        recommendations.push('Review and fix major consistency issues');
-      }
-      
-      recommendations.push('Continue monitoring character development and plot progression');
+      recommendations.push('Chapter maintains excellent consistency with previous story elements');
+      return recommendations;
     }
+    
+    const criticalIssues = issues.filter(i => i.severity === 'critical');
+    const majorIssues = issues.filter(i => i.severity === 'major');
+    const minorIssues = issues.filter(i => i.severity === 'minor');
+    
+    if (criticalIssues.length > 0) {
+      recommendations.push(`❌ Address ${criticalIssues.length} critical consistency issue${criticalIssues.length === 1 ? '' : 's'} before proceeding`);
+      recommendations.push('Critical issues can break story immersion and reader trust');
+    }
+    
+    if (majorIssues.length > 0) {
+      recommendations.push(`⚠️ Review and fix ${majorIssues.length} major consistency issue${majorIssues.length === 1 ? '' : 's'}`);
+    }
+    
+    if (minorIssues.length > 0) {
+      recommendations.push(`📝 Consider addressing ${minorIssues.length} minor consistency issue${minorIssues.length === 1 ? '' : 's'} for polish`);
+    }
+    
+    // Category-specific recommendations
+    const categoryTypes = Array.from(new Set(issues.map(i => i.type)));
+    if (categoryTypes.includes('timeline')) {
+      recommendations.push('🕐 Pay special attention to time progression and character locations');
+    }
+    if (categoryTypes.includes('character')) {
+      recommendations.push('👥 Ensure character behavior and knowledge remain consistent');
+    }
+    if (categoryTypes.includes('worldbuilding')) {
+      recommendations.push('🌍 Verify world rules and established elements are maintained');
+    }
+    if (categoryTypes.includes('research')) {
+      recommendations.push('📚 Double-check research facts and technical details');
+    }
+    
+    recommendations.push('Continue monitoring consistency as the story progresses');
     
     return recommendations;
   }
@@ -495,11 +1009,37 @@ Report specific timeline issues.`;
    * Identify successful consistency elements
    */
   private identifySuccessfulElements(chapterNumber: number): string[] {
-    return [
-      'Character behavior remains consistent',
-      'Plot progression follows established logic',
-      'Research integration feels natural'
-    ];
+    const elements: string[] = [];
+    
+    // Check character tracking
+    const activeCharacters = this.tracker.characters.filter(c => c.lastSeen === chapterNumber);
+    if (activeCharacters.length > 0) {
+      elements.push(`Successfully tracked ${activeCharacters.length} character${activeCharacters.length === 1 ? '' : 's'}`);
+    }
+    
+    // Check timeline progression
+    const recentTimeEntries = this.tracker.timeline.filter(t => t.chapter === chapterNumber);
+    if (recentTimeEntries.length > 0) {
+      elements.push('Time progression properly tracked');
+    }
+    
+    // Check plot development
+    const recentPlotPoints = this.tracker.plotPoints.filter(p => p.chapter === chapterNumber);
+    if (recentPlotPoints.length > 0) {
+      elements.push('Plot development documented');
+    }
+    
+    // Check worldbuilding
+    const recentWorldBuilding = this.tracker.worldBuilding.filter(w => w.chapters.includes(chapterNumber));
+    if (recentWorldBuilding.length > 0) {
+      elements.push('World elements consistently maintained');
+    }
+    
+    if (elements.length === 0) {
+      elements.push('Basic story structure maintained');
+    }
+    
+    return elements;
   }
 
   /**
@@ -514,5 +1054,8 @@ Report specific timeline issues.`;
    */
   updateConfig(newConfig: Partial<ContinuityInspectorConfig>): void {
     this.config = { ...this.config, ...newConfig };
+    this.promptConfig = {
+      maxContentLength: this.config.maxContentLength
+    };
   }
 } 

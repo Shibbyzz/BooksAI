@@ -1,36 +1,23 @@
 import { generateAIText } from '@/lib/openai';
 import type { BookSettings } from '@/types';
+import { researchPrompts } from '../prompts/research-prompts';
+import { 
+  ResearchResultSchema, 
+  ResearchTopicsSchema, 
+  ComprehensiveResearchSchema,
+  type ResearchTopic,
+  type ResearchResult,
+  type ComprehensiveResearch,
+  type ResearchTopics
+} from '../validators/research';
+import { z } from 'zod';
 
 export interface ResearchAgentConfig {
   model: string;
   temperature: number;
   maxTokens: number;
-}
-
-export interface ResearchTopic {
-  topic: string;
-  priority: 'high' | 'medium' | 'low';
-  scope: 'broad' | 'specific';
-  context: string;
-}
-
-export interface ResearchResult {
-  topic: string;
-  facts: string[];
-  sources: string[];
-  keyDetails: {
-    [key: string]: string;
-  };
-  contradictions: string[];
-  uncertainties: string[];
-}
-
-export interface ComprehensiveResearch {
-  domainKnowledge: ResearchResult[];
-  characterBackgrounds: ResearchResult[];
-  settingDetails: ResearchResult[];
-  technicalAspects: ResearchResult[];
-  culturalContext: ResearchResult[];
+  maxRetries: number;
+  retryDelay: number;
 }
 
 export class ResearchAgent {
@@ -41,8 +28,41 @@ export class ResearchAgent {
       model: 'gpt-3.5-turbo',
       temperature: 0.3, // Low temperature for factual accuracy
       maxTokens: 3000,
+      maxRetries: 3,
+      retryDelay: 1000,
       ...config
     };
+  }
+
+  /**
+   * Utility to run operations with retry logic
+   */
+  private async runWithRetry<T>(
+    operation: () => Promise<T>,
+    label: string,
+    maxRetries: number = this.config.maxRetries
+  ): Promise<T> {
+    let lastError: Error | null = null;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`${label} (attempt ${attempt}/${maxRetries})`);
+        const result = await operation();
+        if (attempt > 1) {
+          console.log(`${label} succeeded on attempt ${attempt}`);
+        }
+        return result;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        console.warn(`${label} failed on attempt ${attempt}:`, lastError.message);
+        
+        if (attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, this.config.retryDelay * attempt));
+        }
+      }
+    }
+    
+    throw new Error(`${label} failed after ${maxRetries} attempts. Last error: ${lastError?.message}`);
   }
 
   /**
@@ -57,7 +77,10 @@ export class ResearchAgent {
       console.log('Starting comprehensive research phase...');
       
       // Identify research topics from the story concept
-      const researchTopics = await this.identifyResearchTopics(userPrompt, backCover, settings);
+      const researchTopics = await this.runWithRetry(
+        () => this.identifyResearchTopics(userPrompt, backCover, settings),
+        'Identifying research topics'
+      );
       
       // Conduct research in parallel for efficiency
       const [
@@ -67,22 +90,41 @@ export class ResearchAgent {
         technicalAspects,
         culturalContext
       ] = await Promise.all([
-        this.researchDomainKnowledge(researchTopics.domain, settings),
-        this.researchCharacterBackgrounds(researchTopics.characters, settings),
-        this.researchSettingDetails(researchTopics.settings, settings),
-        this.researchTechnicalAspects(researchTopics.technical, settings),
-        this.researchCulturalContext(researchTopics.cultural, settings)
+        this.runWithRetry(
+          () => this.researchDomainKnowledge(researchTopics.domain, settings),
+          'Researching domain knowledge'
+        ),
+        this.runWithRetry(
+          () => this.researchCharacterBackgrounds(researchTopics.characters, settings),
+          'Researching character backgrounds'
+        ),
+        this.runWithRetry(
+          () => this.researchSettingDetails(researchTopics.settings, settings),
+          'Researching setting details'
+        ),
+        this.runWithRetry(
+          () => this.researchTechnicalAspects(researchTopics.technical, settings),
+          'Researching technical aspects'
+        ),
+        this.runWithRetry(
+          () => this.researchCulturalContext(researchTopics.cultural, settings),
+          'Researching cultural context'
+        )
       ]);
 
-      console.log('Comprehensive research completed');
-      
-      return {
+      const result = {
         domainKnowledge,
         characterBackgrounds,
         settingDetails,
         technicalAspects,
         culturalContext
       };
+
+      // Validate the comprehensive research result
+      const validatedResult = ComprehensiveResearchSchema.parse(result);
+      
+      console.log('Comprehensive research completed successfully');
+      return validatedResult;
     } catch (error) {
       console.error('Error in comprehensive research:', error);
       throw new Error(`Research failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -100,16 +142,26 @@ export class ResearchAgent {
     try {
       console.log(`Conducting targeted research for: ${topic}`);
       
-      const prompt = this.buildTargetedResearchPrompt(topic, context, existingResearch);
-      
-      const response = await generateAIText(prompt, {
-        model: this.config.model,
-        temperature: this.config.temperature,
-        maxTokens: this.config.maxTokens,
-        system: 'You are a professional researcher. Provide accurate, detailed, and verifiable information. Focus on facts that would be relevant for storytelling. Always note any uncertainties or contradictions.'
-      });
+      const result = await this.runWithRetry(async () => {
+        const relevantResearch = this.findRelevantResearch(topic, existingResearch);
+        const relevantSummary = relevantResearch.slice(0, 3)
+          .map(r => `- ${r.topic}: ${r.facts.slice(0, 2).join('; ')}`)
+          .join('\n');
+        
+        const prompt = researchPrompts.targetedResearch(topic, context, relevantSummary);
+        
+        const response = await generateAIText(prompt, {
+          model: this.config.model,
+          temperature: this.config.temperature,
+          maxTokens: this.config.maxTokens,
+          system: 'You are a professional researcher. Provide accurate, detailed, and verifiable information. Focus on facts that would be relevant for storytelling. Always note any uncertainties or contradictions.'
+        });
 
-      return this.parseResearchResponse(response.text, topic);
+        return this.parseResearchResponse(response.text, topic);
+      }, `Targeted research for ${topic}`);
+
+      // Validate the result
+      return ResearchResultSchema.parse(result);
     } catch (error) {
       console.error('Error in targeted research:', error);
       throw new Error(`Targeted research failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -123,34 +175,8 @@ export class ResearchAgent {
     userPrompt: string,
     backCover: string,
     settings: BookSettings
-  ): Promise<{
-    domain: ResearchTopic[];
-    characters: ResearchTopic[];
-    settings: ResearchTopic[];
-    technical: ResearchTopic[];
-    cultural: ResearchTopic[];
-  }> {
-    const prompt = `
-Analyze this story concept and identify key research topics:
-
-USER PROMPT: ${userPrompt}
-BACK COVER: ${backCover}
-GENRE: ${settings.genre}
-TARGET AUDIENCE: ${settings.targetAudience}
-
-Identify research topics in these categories:
-1. DOMAIN KNOWLEDGE (core subject matter - e.g., Mars exploration, Medieval history, Medical procedures)
-2. CHARACTER BACKGROUNDS (professions, skills, backgrounds mentioned)
-3. SETTING DETAILS (locations, time periods, environments)
-4. TECHNICAL ASPECTS (technology, science, specialized knowledge)
-5. CULTURAL CONTEXT (social norms, customs, historical context)
-
-For each topic, specify:
-- Priority (high/medium/low)
-- Scope (broad/specific)
-- Why it's important for the story
-
-Respond in JSON format with the five categories above.`;
+  ): Promise<ResearchTopics> {
+    const prompt = researchPrompts.identifyTopics(userPrompt, backCover, settings);
 
     const response = await generateAIText(prompt, {
       model: this.config.model,
@@ -170,9 +196,13 @@ Respond in JSON format with the five categories above.`;
         }
       }
       
-      return JSON.parse(cleanContent);
+      const parsed = JSON.parse(cleanContent);
+      return ResearchTopicsSchema.parse(parsed);
     } catch (parseError) {
       console.error('Error parsing research topics:', parseError);
+      console.error('Raw response:', response.text);
+      console.error('Reason for fallback: Invalid JSON structure or missing required fields');
+      
       // Fallback to basic research topics
       return this.generateFallbackResearchTopics(settings);
     }
@@ -191,22 +221,7 @@ Respond in JSON format with the five categories above.`;
 
     const researchPromises = topics.map(async (topic) => {
       try {
-        const prompt = `
-Research the following topic for a ${settings.genre} book:
-
-TOPIC: ${topic.topic}
-CONTEXT: ${topic.context}
-PRIORITY: ${topic.priority}
-
-Provide comprehensive information including:
-1. Key facts and details
-2. Common misconceptions
-3. Important nuances
-4. Storytelling opportunities
-5. Potential contradictions to avoid
-
-Focus on information that would help an author write authentically about this topic.
-Be specific and detailed, but concise.`;
+        const prompt = researchPrompts.domainKnowledge(topic.topic, topic.context, settings);
 
         const response = await generateAIText(prompt, {
           model: this.config.model,
@@ -215,17 +230,18 @@ Be specific and detailed, but concise.`;
           system: 'You are a subject matter expert providing research for creative writing. Be accurate and detailed.'
         });
 
-        return this.parseResearchResponse(response.text, topic.topic);
+        const result = this.parseResearchResponse(response.text, topic.topic);
+        return ResearchResultSchema.parse(result);
       } catch (error) {
         console.error(`Error researching domain topic ${topic.topic}:`, error);
-        return {
+        return ResearchResultSchema.parse({
           topic: topic.topic,
           facts: [`Research failed for ${topic.topic}`],
           sources: [],
           keyDetails: {},
           contradictions: [],
           uncertainties: []
-        };
+        });
       }
     });
 
@@ -245,21 +261,7 @@ Be specific and detailed, but concise.`;
 
     const researchPromises = topics.map(async (topic) => {
       try {
-        const prompt = `
-Research character background information for a ${settings.genre} story:
-
-CHARACTER TYPE/PROFESSION: ${topic.topic}
-STORY CONTEXT: ${topic.context}
-
-Provide detailed information about:
-1. Typical daily life and responsibilities
-2. Required skills and training
-3. Common personality traits and motivations
-4. Professional jargon and terminology
-5. Challenges and conflicts inherent to this role
-6. Social status and relationships
-
-This information will be used to create authentic character portrayals.`;
+        const prompt = researchPrompts.characterBackgrounds(topic.topic, topic.context, settings);
 
         const response = await generateAIText(prompt, {
           model: this.config.model,
@@ -267,17 +269,18 @@ This information will be used to create authentic character portrayals.`;
           maxTokens: 1500
         });
 
-        return this.parseResearchResponse(response.text, topic.topic);
+        const result = this.parseResearchResponse(response.text, topic.topic);
+        return ResearchResultSchema.parse(result);
       } catch (error) {
         console.error(`Error researching character topic ${topic.topic}:`, error);
-        return {
+        return ResearchResultSchema.parse({
           topic: topic.topic,
           facts: [`Character research failed for ${topic.topic}`],
           sources: [],
           keyDetails: {},
           contradictions: [],
           uncertainties: []
-        };
+        });
       }
     });
 
@@ -297,21 +300,7 @@ This information will be used to create authentic character portrayals.`;
 
     const researchPromises = topics.map(async (topic) => {
       try {
-        const prompt = `
-Research location/setting information for a ${settings.genre} story:
-
-LOCATION/SETTING: ${topic.topic}
-STORY CONTEXT: ${topic.context}
-
-Provide detailed information about:
-1. Physical characteristics and geography
-2. Climate and environmental conditions
-3. Cultural and social aspects
-4. Historical significance
-5. Sensory details (sounds, smells, atmosphere)
-6. Unique features or notable landmarks
-
-Focus on details that would help create vivid, immersive scenes.`;
+        const prompt = researchPrompts.settingDetails(topic.topic, topic.context, settings);
 
         const response = await generateAIText(prompt, {
           model: this.config.model,
@@ -319,17 +308,18 @@ Focus on details that would help create vivid, immersive scenes.`;
           maxTokens: 1500
         });
 
-        return this.parseResearchResponse(response.text, topic.topic);
+        const result = this.parseResearchResponse(response.text, topic.topic);
+        return ResearchResultSchema.parse(result);
       } catch (error) {
         console.error(`Error researching setting topic ${topic.topic}:`, error);
-        return {
+        return ResearchResultSchema.parse({
           topic: topic.topic,
           facts: [`Setting research failed for ${topic.topic}`],
           sources: [],
           keyDetails: {},
           contradictions: [],
           uncertainties: []
-        };
+        });
       }
     });
 
@@ -349,21 +339,7 @@ Focus on details that would help create vivid, immersive scenes.`;
 
     const researchPromises = topics.map(async (topic) => {
       try {
-        const prompt = `
-Research technical information for a ${settings.genre} story:
-
-TECHNICAL TOPIC: ${topic.topic}
-STORY CONTEXT: ${topic.context}
-
-Provide accurate technical information including:
-1. How it actually works
-2. Limitations and constraints
-3. Common problems or failures
-4. Technical terminology
-5. Safety considerations
-6. Recent developments or changes
-
-Explain in a way that's accurate but accessible for storytelling purposes.`;
+        const prompt = researchPrompts.technicalAspects(topic.topic, topic.context, settings);
 
         const response = await generateAIText(prompt, {
           model: this.config.model,
@@ -371,17 +347,18 @@ Explain in a way that's accurate but accessible for storytelling purposes.`;
           maxTokens: 2000
         });
 
-        return this.parseResearchResponse(response.text, topic.topic);
+        const result = this.parseResearchResponse(response.text, topic.topic);
+        return ResearchResultSchema.parse(result);
       } catch (error) {
         console.error(`Error researching technical topic ${topic.topic}:`, error);
-        return {
+        return ResearchResultSchema.parse({
           topic: topic.topic,
           facts: [`Technical research failed for ${topic.topic}`],
           sources: [],
           keyDetails: {},
           contradictions: [],
           uncertainties: []
-        };
+        });
       }
     });
 
@@ -401,21 +378,7 @@ Explain in a way that's accurate but accessible for storytelling purposes.`;
 
     const researchPromises = topics.map(async (topic) => {
       try {
-        const prompt = `
-Research cultural context for a ${settings.genre} story:
-
-CULTURAL ASPECT: ${topic.topic}
-STORY CONTEXT: ${topic.context}
-
-Provide information about:
-1. Social norms and customs
-2. Values and beliefs
-3. Communication styles
-4. Relationship dynamics
-5. Conflict sources and taboos
-6. Changes over time
-
-Focus on authentic cultural details that affect how characters interact and behave.`;
+        const prompt = researchPrompts.culturalContext(topic.topic, topic.context, settings);
 
         const response = await generateAIText(prompt, {
           model: this.config.model,
@@ -423,17 +386,18 @@ Focus on authentic cultural details that affect how characters interact and beha
           maxTokens: 1500
         });
 
-        return this.parseResearchResponse(response.text, topic.topic);
+        const result = this.parseResearchResponse(response.text, topic.topic);
+        return ResearchResultSchema.parse(result);
       } catch (error) {
         console.error(`Error researching cultural topic ${topic.topic}:`, error);
-        return {
+        return ResearchResultSchema.parse({
           topic: topic.topic,
           facts: [`Cultural research failed for ${topic.topic}`],
           sources: [],
           keyDetails: {},
           contradictions: [],
           uncertainties: []
-        };
+        });
       }
     });
 
@@ -441,69 +405,93 @@ Focus on authentic cultural details that affect how characters interact and beha
   }
 
   /**
-   * Build prompt for targeted research
-   */
-  private buildTargetedResearchPrompt(
-    topic: string,
-    context: string,
-    existingResearch: ComprehensiveResearch
-  ): string {
-    // Extract relevant existing research
-    const relevantResearch = this.findRelevantResearch(topic, existingResearch);
-    
-    return `
-TARGETED RESEARCH REQUEST:
-
-SPECIFIC TOPIC: ${topic}
-SCENE CONTEXT: ${context}
-
-EXISTING RESEARCH SUMMARY:
-${relevantResearch.slice(0, 3).map(r => `- ${r.topic}: ${r.facts.slice(0, 2).join('; ')}`).join('\n')}
-
-Provide specific, detailed information about "${topic}" that would help write this scene authentically.
-
-Focus on:
-1. Specific details not covered in existing research
-2. Sensory information (what would characters see, hear, feel?)
-3. Practical considerations (what would actually happen?)
-4. Potential dramatic elements or conflicts
-
-Be specific and concrete rather than general.`;
-  }
-
-  /**
-   * Parse research response into structured format
+   * Parse research response into structured format with sanitization
    */
   private parseResearchResponse(responseText: string, topic: string): ResearchResult {
-    // Parse the AI response into structured data
-    // This is a simplified version - could be enhanced with more sophisticated parsing
+    // Remove markdown formatting
+    let cleanText = responseText
+      .replace(/```[\s\S]*?```/g, '') // Remove code blocks
+      .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold
+      .replace(/\*(.*?)\*/g, '$1') // Remove italic
+      .replace(/#{1,6}\s/g, '') // Remove headers
+      .replace(/^\s*[-*+]\s/gm, '') // Remove list markers
+      .replace(/^\s*\d+\.\s/gm, ''); // Remove numbered list markers
+
+    const lines = cleanText.split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0);
     
-    const lines = responseText.split('\n').filter(line => line.trim());
     const facts: string[] = [];
+    const sources: string[] = [];
+    const contradictions: string[] = [];
+    const uncertainties: string[] = [];
     const keyDetails: { [key: string]: string } = {};
     
     let currentSection = '';
     
     for (const line of lines) {
-      if (line.match(/^\d+\./)) {
-        // Numbered fact
-        facts.push(line.replace(/^\d+\.\s*/, ''));
-      } else if (line.includes(':')) {
-        // Key-value pair
-        const [key, value] = line.split(':', 2);
-        if (key && value) {
-          keyDetails[key.trim()] = value.trim();
+      const lowerLine = line.toLowerCase();
+      
+      // Detect sections
+      if (lowerLine.includes('source') || lowerLine.includes('reference')) {
+        currentSection = 'sources';
+        continue;
+      } else if (lowerLine.includes('contradiction')) {
+        currentSection = 'contradictions';
+        continue;
+      } else if (lowerLine.includes('uncertain') || lowerLine.includes('unknown')) {
+        currentSection = 'uncertainties';
+        continue;
+      }
+      
+      // Parse content based on current section
+      if (currentSection === 'sources') {
+        if (line.length > 10) { // Ignore very short lines
+          sources.push(line);
+        }
+      } else if (currentSection === 'contradictions') {
+        if (line.length > 10) {
+          contradictions.push(line);
+        }
+      } else if (currentSection === 'uncertainties') {
+        if (line.length > 10) {
+          uncertainties.push(line);
+        }
+      } else {
+        // Default to facts or key details
+        if (line.match(/^\d+\./)) {
+          // Numbered fact
+          const fact = line.replace(/^\d+\.\s*/, '');
+          if (fact.length > 0) {
+            facts.push(fact);
+          }
+        } else if (line.includes(':') && !line.includes('http')) {
+          // Key-value pair (but not URLs)
+          const [key, ...valueParts] = line.split(':');
+          const value = valueParts.join(':').trim();
+          if (key && value && key.trim().length > 0 && value.length > 0) {
+            keyDetails[key.trim()] = value;
+          }
+        } else if (line.length > 10) {
+          // General fact
+          facts.push(line);
         }
       }
     }
     
+    // Deduplicate and clean arrays
+    const uniqueFacts = Array.from(new Set(facts));
+    const uniqueSources = Array.from(new Set(sources));
+    const uniqueContradictions = Array.from(new Set(contradictions));
+    const uniqueUncertainties = Array.from(new Set(uncertainties));
+    
     return {
       topic,
-      facts,
-      sources: [], // Could be enhanced to extract sources
+      facts: uniqueFacts,
+      sources: uniqueSources,
       keyDetails,
-      contradictions: [], // Could be enhanced to identify contradictions
-      uncertainties: [] // Could be enhanced to identify uncertainties
+      contradictions: uniqueContradictions,
+      uncertainties: uniqueUncertainties
     };
   }
 
@@ -533,7 +521,7 @@ Be specific and concrete rather than general.`;
   /**
    * Generate fallback research topics if AI parsing fails
    */
-  private generateFallbackResearchTopics(settings: BookSettings): any {
+  private generateFallbackResearchTopics(settings: BookSettings): ResearchTopics {
     return {
       domain: [
         {
