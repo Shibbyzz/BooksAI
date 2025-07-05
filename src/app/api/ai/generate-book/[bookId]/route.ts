@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { BookGenerationOrchestrator } from '@/lib/ai/orchestrator';
 import { prisma } from '@/lib/prisma';
 import { GenerationStep } from '@prisma/client';
+import { progressTracker } from '@/lib/progress-tracker'; // Add Redis progress tracker
 
 export async function POST(
   request: NextRequest,
@@ -117,6 +118,17 @@ async function generateBookInBackground(bookId: string, prompt: string, settings
     // Progress callback to update database
     const updateProgress = async (progress: number, status: string) => {
       console.log(`Book ${bookId} progress: ${progress}% - ${status}`);
+      
+      // Update Redis progress for real-time UI updates
+      await progressTracker.updateProgress(bookId, {
+        status: 'GENERATING',
+        generationStep: progress <= 25 ? 'PLANNING' : 
+                       progress <= 40 ? 'OUTLINE' : 
+                       progress <= 90 ? 'CHAPTERS' : 
+                       progress < 100 ? 'PROOFREADING' : 'COMPLETE',
+        overallProgress: Math.round(progress),
+        message: status
+      });
       
       // Map progress to existing generation steps (enhanced workflow mapped to current enum)
       let generationStep: GenerationStep = GenerationStep.CHAPTERS;
@@ -348,16 +360,16 @@ export async function GET(
         statusMessage = 'Preparing book concept...';
         break;
       case GenerationStep.BACK_COVER:
-        progress = 5;
+        progress = 25; // Fixed: was 5, now matches Redis values
         statusMessage = 'Generating back cover...';
         break;
       case GenerationStep.OUTLINE:
         // Handle both outline and research phases with enhanced messaging
         if (totalChapters === 0) {
-          progress = 15;
+          progress = 35; // Fixed: was 15, now matches Redis values
           statusMessage = 'ResearchAgent conducting comprehensive research...';
         } else {
-          progress = 25;
+          progress = 40; // Fixed: was 25, now matches Redis values  
           statusMessage = 'Creating detailed outline with research integration...';
         }
         break;
@@ -385,7 +397,7 @@ export async function GET(
         statusMessage = 'Enhanced book generation complete with professional quality!';
         break;
       default:
-        progress = 20;
+        progress = 50; // Fixed: was 20, now a reasonable default
         statusMessage = 'Processing...';
     }
 

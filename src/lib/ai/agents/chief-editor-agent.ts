@@ -2,6 +2,7 @@ import { generateAIText } from '@/lib/openai';
 import type { BookSettings } from '@/types';
 import type { ComprehensiveResearch } from '../validators/research';
 import type { OutlineGeneration } from './planning-agent';
+import { GenreStructurePlanner } from '../planning/genre-structure';
 
 export interface ChiefEditorConfig {
   model: string;
@@ -871,13 +872,22 @@ STRUCTURAL_NEEDS: [essential structural elements]`;
   }
 
   /**
-   * Step 2: Plan chapter structure based on story analysis
+   * Step 2: Plan chapter structure based on story analysis and genre rules
    */
   private async planChapterStructure(
     analysis: StoryAnalysis,
     settings: BookSettings
   ): Promise<ChapterPlan> {
-    const prompt = `Based on this story analysis, determine the optimal chapter structure.
+    // Get genre-specific structure preferences
+    const genreRules = GenreStructurePlanner.getStructureRules(settings.genre);
+    const genreStructure = GenreStructurePlanner.calculateChapterStructure(settings);
+    
+    console.log(`📖 Genre-specific planning for ${settings.genre}:`);
+    console.log(`   Optimal chapter length: ${genreRules.optimalChapterLength} words`);
+    console.log(`   Preferred chapter count: ${genreStructure.chapterCount}`);
+    console.log(`   Pacing pattern: ${genreRules.pacingPattern}`);
+    
+    const prompt = `Based on this story analysis and genre-specific guidelines, determine the optimal chapter structure.
 
 STORY ANALYSIS:
 - Story Type: ${analysis.storyType}
@@ -885,35 +895,44 @@ STORY ANALYSIS:
 - Pacing Needs: ${analysis.pacingRequirements.join(', ')}
 - Structural Needs: ${analysis.structuralNeeds.join(', ')}
 
-TARGET WORD COUNT: ${settings.wordCount}
-GENRE: ${settings.genre}
+GENRE REQUIREMENTS (${settings.genre}):
+- Optimal chapter length: ${genreRules.optimalChapterLength} words
+- Recommended chapter count: ${genreStructure.chapterCount}
+- Pacing pattern: ${genreRules.pacingPattern}
+- Chapter end style: ${genreRules.chapterEndStyle}
+- Preferred sections per chapter: ${genreRules.preferredSectionsPerChapter}
 
-Your task: Determine the chapter structure that best serves this story.
+TARGET WORD COUNT: ${settings.wordCount}
+
+Your task: Create a chapter structure that balances story needs with genre conventions.
 
 Consider:
-1. How many chapters will create the right pacing?
-2. What word counts work best for each chapter?
-3. What purpose should each chapter serve?
-4. Where should act breaks occur?
-5. How should pacing vary throughout?
-
-Think through this step-by-step, then provide your recommendations.
+1. Stay close to genre optimal chapter length (${genreRules.optimalChapterLength} words)
+2. Use ${genreRules.pacingPattern} pacing pattern
+3. Plan for ${genreRules.preferredSectionsPerChapter} sections per chapter
+4. Chapter endings should be ${genreRules.chapterEndStyle}
+5. Respect genre min/max chapter lengths (${genreRules.minChapterLength}-${genreRules.maxChapterLength} words)
 
 Respond with exactly this format:
-TOTAL_CHAPTERS: [number]
-CHAPTER_LENGTHS: [comma-separated word counts]
+TOTAL_CHAPTERS: [number close to ${genreStructure.chapterCount}]
+CHAPTER_LENGTHS: [comma-separated word counts, averaging ${genreRules.optimalChapterLength}]
 CHAPTER_PURPOSES: [comma-separated purposes]
-PACING_FLOW: [comma-separated pacing notes]
+PACING_FLOW: [comma-separated pacing notes using ${genreRules.pacingPattern} pattern]
 ACT_BREAKS: [comma-separated chapter numbers]`;
 
     const response = await this.generateAITextWithRetry(prompt, {
       model: this.config.model,
       temperature: 0.6,
       maxTokens: 1500,
-      system: 'You are a professional book architect. Focus on optimal chapter structure for story pacing and reader engagement.'
-    }, 'Chapter Structure Planning');
+      system: `You are a professional book architect specializing in ${settings.genre} literature. Focus on genre-appropriate chapter structure while maintaining story integrity.`
+    }, 'Genre-Aware Chapter Structure Planning');
 
-    return this.parseChapterPlan(response.text, settings.wordCount);
+    const aiPlan = this.parseChapterPlan(response.text, settings.wordCount);
+    
+    // Validate against genre rules and adjust if necessary
+    const validatedPlan = this.validateAndAdjustChapterPlan(aiPlan, genreRules, settings);
+    
+    return validatedPlan;
   }
 
   /**
@@ -1060,6 +1079,59 @@ Use this EXACT JSON format:
     }
 
     return analysis;
+  }
+
+  /**
+   * Validate and adjust chapter plan against genre rules
+   */
+  private validateAndAdjustChapterPlan(
+    plan: ChapterPlan, 
+    genreRules: any, 
+    settings: BookSettings
+  ): ChapterPlan {
+    console.log(`🔍 Validating chapter plan against ${settings.genre} genre rules...`);
+    
+    // Check if chapter lengths are within genre constraints
+    const adjustedLengths = plan.chapterLengths.map(length => {
+      if (length < genreRules.minChapterLength) {
+        console.log(`   Adjusting short chapter from ${length} to ${genreRules.minChapterLength} words`);
+        return genreRules.minChapterLength;
+      }
+      if (length > genreRules.maxChapterLength) {
+        console.log(`   Adjusting long chapter from ${length} to ${genreRules.maxChapterLength} words`);
+        return genreRules.maxChapterLength;
+      }
+      return length;
+    });
+    
+    // Ensure total word count is still correct after adjustments
+    const currentTotal = adjustedLengths.reduce((sum, len) => sum + len, 0);
+    const difference = settings.wordCount - currentTotal;
+    
+    if (Math.abs(difference) > 100) { // Significant difference
+      console.log(`   Adjusting total word count difference: ${difference} words`);
+      // Distribute the difference across chapters
+      const adjustmentPerChapter = Math.floor(difference / adjustedLengths.length);
+      for (let i = 0; i < adjustedLengths.length; i++) {
+        adjustedLengths[i] += adjustmentPerChapter;
+        // Ensure we don't violate genre constraints
+        adjustedLengths[i] = Math.max(genreRules.minChapterLength, 
+                                      Math.min(genreRules.maxChapterLength, adjustedLengths[i]));
+      }
+      
+      // Handle any remaining difference
+      const remainingDifference = settings.wordCount - adjustedLengths.reduce((sum, len) => sum + len, 0);
+      if (remainingDifference !== 0) {
+        adjustedLengths[Math.floor(adjustedLengths.length / 2)] += remainingDifference;
+      }
+    }
+    
+    console.log(`✅ Chapter plan validated for ${settings.genre} genre`);
+    
+    return {
+      ...plan,
+      chapterLengths: adjustedLengths
+    };
   }
 
   /**

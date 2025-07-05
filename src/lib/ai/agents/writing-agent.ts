@@ -45,6 +45,11 @@ export class WritingAgent {
 
   async generateSection(context: SectionContext): Promise<SectionGeneration> {
     try {
+      const targetWords = context.settings.wordCount || 1000;
+      
+      // DEBUG: Log the word target to identify where massive numbers come from
+      console.log(`📝 WritingAgent: Generating section with ${targetWords} words target`);
+      
       const prompt = this.buildSectionPrompt(context);
       
       const response = await generateAIText(prompt, {
@@ -60,7 +65,6 @@ export class WritingAgent {
 
       const tokensUsed = response.usage?.totalTokens || 0;
       const wordCount = this.countWords(response.text);
-      const targetWords = context.settings.wordCount || 1000;
       
       // NEW: Fallback logic for short content
       const warnings: string[] = [];
@@ -189,10 +193,13 @@ Remember: Meeting the word count target is crucial for proper book structure and
       emotionalBeat
     } = context;
 
-    // Calculate target word count for this section
+    // Calculate target word count for this section (should already be validated)
     const targetWords = settings.wordCount || 1000;
     const wordGuidance = this.getWordCountGuidance(targetWords);
 
+    // DEBUG: Log the word target being requested in WritingAgent
+    console.log(`🎯 WritingAgent building prompt for ${targetWords} words`);
+    
     let prompt = `Write section ${sectionNumber} of ${totalSections} for the chapter "${chapterTitle}".
 
 BOOK DETAILS:
@@ -238,8 +245,10 @@ SECTION REQUIREMENTS:
     }
 
     if (previousSections.length > 0) {
+      // Limit context to avoid OpenAI response limits
+      const contextLimit = previousSections.length > 1 ? 200 : 300;
       prompt += `\nPREVIOUS SECTIONS CONTEXT:
-${previousSections.map((section, i) => `Section ${i + (sectionNumber - previousSections.length)}: ${section.substring(0, 400)}...`).join('\n')}`;
+${previousSections.map((section, i) => `Section ${i + (sectionNumber - previousSections.length)}: ...${section.substring(Math.max(0, section.length - contextLimit))}`).join('\n')}`;
     }
 
     prompt += `\n\nGenerate engaging, high-quality prose that:

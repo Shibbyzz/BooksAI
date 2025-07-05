@@ -62,20 +62,60 @@ export class ActionSceneWriter {
       - Balance action with character emotion and stakes
       - Create escalating tension that builds to the scene outcome
       - Use strong, active verbs and minimize passive voice
-      - Include realistic consequences and physical limitations`
+      - Include realistic consequences and physical limitations
+      - CRITICAL: Meet the exact word count target specified in the prompt`
     });
 
+    let content = response.text.trim();
+    let wordCount = this.countWords(content);
+    let tokensUsed = response.usage?.totalTokens || 0;
+    
+    // Retry if content is too short (less than 70% of target)
+    if (wordCount < context.wordTarget * 0.7) {
+      console.warn(`ActionWriter: Generated ${wordCount} words, below target of ${context.wordTarget}. Retrying...`);
+      
+      const retryPrompt = `${prompt}\n\nIMPORTANT: The previous attempt was too short (${wordCount} words). You MUST write at least ${Math.floor(context.wordTarget * 0.8)} words. Add more action details, character reactions, and sensory descriptions to reach the target.`;
+      
+      try {
+        const retryResponse = await generateAIText(retryPrompt, {
+          model: this.config.model,
+          temperature: 0.8, // Slightly lower temperature for retry
+          maxTokens: this.config.maxTokens,
+          system: `You are an expert action writer. CRITICAL: You must meet the exact word count target specified in the prompt. Expand with vivid details and character reactions.`
+        });
+        
+        const retryContent = retryResponse.text.trim();
+        const retryWordCount = this.countWords(retryContent);
+        
+        if (retryWordCount > wordCount) {
+          content = retryContent;
+          wordCount = retryWordCount;
+          tokensUsed += retryResponse.usage?.totalTokens || 0;
+          console.log(`ActionWriter: Retry successful - improved from ${wordCount} to ${retryWordCount} words`);
+        }
+      } catch (retryError) {
+        console.warn('ActionWriter: Retry failed:', retryError);
+      }
+    }
+
     return {
-      content: response.text.trim(),
-      wordCount: this.countWords(response.text),
+      content,
+      wordCount,
       sceneType: 'action',
       qualityScore: 85,
-      tokensUsed: response.usage?.totalTokens || 0
+      tokensUsed
     };
   }
 
   private buildActionPrompt(context: SceneContext): string {
-    return `Write an intense action scene:
+    // DEBUG: Log the word target being requested
+    console.log(`🎯 ActionWriter building prompt for ${context.wordTarget} words`);
+    
+    return `Write an intense action scene of exactly ${context.wordTarget} words:
+
+CRITICAL WORD COUNT REQUIREMENT: 
+- Write approximately ${context.wordTarget} words (${Math.floor(context.wordTarget * 0.8)}-${Math.floor(context.wordTarget * 1.2)} words acceptable)
+- This is essential for proper chapter pacing and structure
 
 SCENE CONTEXT:
 - Setting: ${context.setting}
@@ -83,7 +123,6 @@ SCENE CONTEXT:
 - Conflict: ${context.conflict}
 - Outcome: ${context.outcome}
 - Mood: ${context.mood}
-- Word Target: ${context.wordTarget} words
 
 SCENE REQUIREMENTS:
 - Create visceral, fast-paced action
@@ -92,10 +131,11 @@ SCENE REQUIREMENTS:
 - Show character emotions under pressure
 - Build to the specified outcome: ${context.outcome}
 - Maintain clear choreography and spatial awareness
+- MUST meet the ${context.wordTarget} word count target
 
-${context.previousContent ? `PREVIOUS SCENE CONTEXT:\n${context.previousContent.substring(0, 200)}...\n` : ''}
+${context.previousContent ? `PREVIOUS SCENE CONTEXT:\n...${context.previousContent.substring(Math.max(0, context.previousContent.length - 200))}\n` : ''}
 
-Write compelling action that puts readers in the middle of the intensity.`;
+Write compelling action that puts readers in the middle of the intensity. Remember: aim for ${context.wordTarget} words.`;
   }
 
   private countWords(text: string): number {
@@ -127,20 +167,60 @@ export class DialogueWriter {
       - Include subtext and hidden meanings
       - Balance dialogue with action beats and description
       - Use realistic interruptions, pauses, and overlaps
-      - Show character relationships through interaction dynamics`
+      - Show character relationships through interaction dynamics
+      - CRITICAL: Meet the exact word count target specified in the prompt`
     });
 
+    let content = response.text.trim();
+    let wordCount = this.countWords(content);
+    let tokensUsed = response.usage?.totalTokens || 0;
+    
+    // Retry if content is too short (less than 70% of target)
+    if (wordCount < context.wordTarget * 0.7) {
+      console.warn(`DialogueWriter: Generated ${wordCount} words, below target of ${context.wordTarget}. Retrying...`);
+      
+      const retryPrompt = `${prompt}\n\nIMPORTANT: The previous attempt was too short (${wordCount} words). You MUST write at least ${Math.floor(context.wordTarget * 0.8)} words. Add more dialogue exchanges, action beats, and character interactions to reach the target.`;
+      
+      try {
+        const retryResponse = await generateAIText(retryPrompt, {
+          model: this.config.model,
+          temperature: 0.7,
+          maxTokens: this.config.maxTokens,
+          system: `You are an expert dialogue writer. CRITICAL: You must meet the exact word count target specified in the prompt. Expand with more character interaction and subtext.`
+        });
+        
+        const retryContent = retryResponse.text.trim();
+        const retryWordCount = this.countWords(retryContent);
+        
+        if (retryWordCount > wordCount) {
+          content = retryContent;
+          wordCount = retryWordCount;
+          tokensUsed += retryResponse.usage?.totalTokens || 0;
+          console.log(`DialogueWriter: Retry successful - improved from ${wordCount} to ${retryWordCount} words`);
+        }
+      } catch (retryError) {
+        console.warn('DialogueWriter: Retry failed:', retryError);
+      }
+    }
+
     return {
-      content: response.text.trim(),
-      wordCount: this.countWords(response.text),
+      content,
+      wordCount,
       sceneType: 'dialogue',
       qualityScore: 87,
-      tokensUsed: response.usage?.totalTokens || 0
+      tokensUsed
     };
   }
 
   private buildDialoguePrompt(context: SceneContext): string {
-    return `Write a dialogue-driven scene:
+    // DEBUG: Log the word target being requested
+    console.log(`🎯 DialogueWriter building prompt for ${context.wordTarget} words`);
+    
+    return `Write a dialogue-driven scene of exactly ${context.wordTarget} words:
+
+CRITICAL WORD COUNT REQUIREMENT: 
+- Write approximately ${context.wordTarget} words (${Math.floor(context.wordTarget * 0.8)}-${Math.floor(context.wordTarget * 1.2)} words acceptable)
+- This is essential for proper chapter pacing and structure
 
 SCENE CONTEXT:
 - Setting: ${context.setting}
@@ -148,7 +228,6 @@ SCENE CONTEXT:
 - Conflict: ${context.conflict}
 - Outcome: ${context.outcome}
 - Mood: ${context.mood}
-- Word Target: ${context.wordTarget} words
 
 DIALOGUE REQUIREMENTS:
 - Each character has a distinct voice
@@ -157,10 +236,11 @@ DIALOGUE REQUIREMENTS:
 - Balance dialogue with action beats
 - Show character relationships through interaction
 - Use realistic speech patterns and interruptions
+- MUST meet the ${context.wordTarget} word count target
 
 ${context.characterStates ? `CHARACTER STATES:\n${Object.entries(context.characterStates).map(([char, state]) => `${char}: ${state}`).join('\n')}\n` : ''}
 
-Write natural, engaging dialogue that feels authentic to these characters.`;
+Write natural, engaging dialogue that feels authentic to these characters. Remember: aim for ${context.wordTarget} words.`;
   }
 
   private countWords(text: string): number {
@@ -192,27 +272,66 @@ export class AtmosphericWriter {
       - Include subtle details that enhance atmosphere
       - Balance description with character interiority
       - Use metaphor and symbolism when appropriate
-      - Create a sense of place that feels real and lived-in`
+      - Create a sense of place that feels real and lived-in
+      - CRITICAL: Meet the exact word count target specified in the prompt`
     });
 
+    let content = response.text.trim();
+    let wordCount = this.countWords(content);
+    let tokensUsed = response.usage?.totalTokens || 0;
+    
+    // Retry if content is too short (less than 70% of target)
+    if (wordCount < context.wordTarget * 0.7) {
+      console.warn(`AtmosphericWriter: Generated ${wordCount} words, below target of ${context.wordTarget}. Retrying...`);
+      
+      const retryPrompt = `${prompt}\n\nIMPORTANT: The previous attempt was too short (${wordCount} words). You MUST write at least ${Math.floor(context.wordTarget * 0.8)} words. Add more sensory details, atmospheric descriptions, and character observations to reach the target.`;
+      
+      try {
+        const retryResponse = await generateAIText(retryPrompt, {
+          model: this.config.model,
+          temperature: 0.6,
+          maxTokens: this.config.maxTokens,
+          system: `You are an expert atmospheric writer. CRITICAL: You must meet the exact word count target specified in the prompt. Expand with rich sensory details and atmosphere.`
+        });
+        
+        const retryContent = retryResponse.text.trim();
+        const retryWordCount = this.countWords(retryContent);
+        
+        if (retryWordCount > wordCount) {
+          content = retryContent;
+          wordCount = retryWordCount;
+          tokensUsed += retryResponse.usage?.totalTokens || 0;
+          console.log(`AtmosphericWriter: Retry successful - improved from ${wordCount} to ${retryWordCount} words`);
+        }
+      } catch (retryError) {
+        console.warn('AtmosphericWriter: Retry failed:', retryError);
+      }
+    }
+
     return {
-      content: response.text.trim(),
-      wordCount: this.countWords(response.text),
+      content,
+      wordCount,
       sceneType: 'description',
       qualityScore: 88,
-      tokensUsed: response.usage?.totalTokens || 0
+      tokensUsed
     };
   }
 
   private buildAtmosphericPrompt(context: SceneContext): string {
-    return `Write an atmospheric scene:
+    // DEBUG: Log the word target being requested
+    console.log(`🎯 AtmosphericWriter building prompt for ${context.wordTarget} words`);
+    
+    return `Write an atmospheric scene of exactly ${context.wordTarget} words:
+
+CRITICAL WORD COUNT REQUIREMENT: 
+- Write approximately ${context.wordTarget} words (${Math.floor(context.wordTarget * 0.8)}-${Math.floor(context.wordTarget * 1.2)} words acceptable)
+- This is essential for proper chapter pacing and structure
 
 SCENE CONTEXT:
 - Setting: ${context.setting}
 - Characters: ${context.characters.join(', ')}
 - Mood: ${context.mood}
 - Purpose: ${context.purpose}
-- Word Target: ${context.wordTarget} words
 
 ATMOSPHERIC REQUIREMENTS:
 - Create immersive sensory experience
@@ -221,10 +340,11 @@ ATMOSPHERIC REQUIREMENTS:
 - Show character's emotional state through their perception
 - Use weather, lighting, and space to enhance mood
 - Balance description with character interiority
+- MUST meet the ${context.wordTarget} word count target
 
 ${context.researchContext ? `RESEARCH CONTEXT:\n${context.researchContext.join('\n')}\n` : ''}
 
-Create rich, immersive atmosphere that draws readers into the scene.`;
+Create rich, immersive atmosphere that draws readers into the scene. Remember: aim for ${context.wordTarget} words.`;
   }
 
   private countWords(text: string): number {
@@ -256,27 +376,66 @@ export class EmotionalWriter {
       - Balance introspection with external action
       - Show rather than tell emotional states
       - Include subtle emotional shifts and realizations
-      - Connect emotions to character's deeper motivations`
+      - Connect emotions to character's deeper motivations
+      - CRITICAL: Meet the exact word count target specified in the prompt`
     });
 
+    let content = response.text.trim();
+    let wordCount = this.countWords(content);
+    let tokensUsed = response.usage?.totalTokens || 0;
+    
+    // Retry if content is too short (less than 70% of target)
+    if (wordCount < context.wordTarget * 0.7) {
+      console.warn(`EmotionalWriter: Generated ${wordCount} words, below target of ${context.wordTarget}. Retrying...`);
+      
+      const retryPrompt = `${prompt}\n\nIMPORTANT: The previous attempt was too short (${wordCount} words). You MUST write at least ${Math.floor(context.wordTarget * 0.8)} words. Add more emotional depth, character introspection, and physical reactions to reach the target.`;
+      
+      try {
+        const retryResponse = await generateAIText(retryPrompt, {
+          model: this.config.model,
+          temperature: 0.7,
+          maxTokens: this.config.maxTokens,
+          system: `You are an expert emotional writer. CRITICAL: You must meet the exact word count target specified in the prompt. Expand with deeper emotional exploration and character development.`
+        });
+        
+        const retryContent = retryResponse.text.trim();
+        const retryWordCount = this.countWords(retryContent);
+        
+        if (retryWordCount > wordCount) {
+          content = retryContent;
+          wordCount = retryWordCount;
+          tokensUsed += retryResponse.usage?.totalTokens || 0;
+          console.log(`EmotionalWriter: Retry successful - improved from ${wordCount} to ${retryWordCount} words`);
+        }
+      } catch (retryError) {
+        console.warn('EmotionalWriter: Retry failed:', retryError);
+      }
+    }
+
     return {
-      content: response.text.trim(),
-      wordCount: this.countWords(response.text),
+      content,
+      wordCount,
       sceneType: 'emotion',
       qualityScore: 89,
-      tokensUsed: response.usage?.totalTokens || 0
+      tokensUsed
     };
   }
 
   private buildEmotionalPrompt(context: SceneContext): string {
-    return `Write an emotionally-driven scene:
+    // DEBUG: Log the word target being requested
+    console.log(`🎯 EmotionalWriter building prompt for ${context.wordTarget} words`);
+    
+    return `Write an emotionally-driven scene of exactly ${context.wordTarget} words:
+
+CRITICAL WORD COUNT REQUIREMENT: 
+- Write approximately ${context.wordTarget} words (${Math.floor(context.wordTarget * 0.8)}-${Math.floor(context.wordTarget * 1.2)} words acceptable)
+- This is essential for proper chapter pacing and structure
 
 SCENE CONTEXT:
 - Character Focus: ${context.characters[0] || 'Main character'}
 - Setting: ${context.setting}
 - Emotional Core: ${context.mood}
 - Purpose: ${context.purpose}
-- Word Target: ${context.wordTarget} words
 
 EMOTIONAL REQUIREMENTS:
 - Show character's internal emotional journey
@@ -285,10 +444,11 @@ EMOTIONAL REQUIREMENTS:
 - Balance introspection with external details
 - Show emotional growth or realization
 - Connect to character's deeper motivations
+- MUST meet the ${context.wordTarget} word count target
 
 ${context.characterStates ? `CHARACTER STATE:\n${context.characterStates[context.characters[0]] || 'Current emotional state'}\n` : ''}
 
-Write a scene that creates deep emotional resonance with readers.`;
+Write a scene that creates deep emotional resonance with readers. Remember: aim for ${context.wordTarget} words.`;
   }
 
   private countWords(text: string): number {
@@ -313,6 +473,9 @@ export class WriterDirector {
   }
 
   async writeScene(context: SceneContext): Promise<SceneGeneration> {
+    // DEBUG: Log the word target to track where massive numbers come from
+    console.log(`📝 WriterDirector: Processing ${context.sceneType} scene with ${context.wordTarget} words target`);
+    
     // Determine best writer based on scene type and context
     const sceneType = this.determineSceneType(context);
     

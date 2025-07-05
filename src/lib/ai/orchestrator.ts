@@ -8,7 +8,10 @@ import { ProofreaderAgent } from './agents/proofreader-agent';
 import { WriterDirector, type SceneContext, type SceneGeneration } from './agents/specialized-writers';
 import { HumanQualityEnhancer, SceneTransitionEnhancer, type QualityEnhancement } from './agents/human-quality-enhancer';
 import { SupervisionAgent, type ChapterReview, type StoryArcProgress } from './agents/supervision-agent';
+import SectionTransitionAgent, { type TransitionContext, type NarrativeVoice, type TransitionResult } from './agents/section-transition-agent';
+import { GenreStructurePlanner, type SectionPlan, type GenreStructureRules } from './planning/genre-structure';
 import { RateLimiter } from './rate-limiter';
+import { progressTracker } from '../progress-tracker';
 import { prisma } from '@/lib/prisma';
 import { 
   GenerationStep,
@@ -20,6 +23,7 @@ import type {
   Book, 
   GenerationProgress
 } from '@/types';
+import type { BookProgress } from '../progress-tracker';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -100,10 +104,12 @@ export class BookGenerationOrchestrator {
   private qualityEnhancer: HumanQualityEnhancer;
   private transitionEnhancer: SceneTransitionEnhancer;
   private supervisionAgent: SupervisionAgent; // NEW: Supervision agent
+  private sectionTransitionAgent: SectionTransitionAgent; // NEW: Section transition agent
   private rateLimiter: RateLimiter; // NEW: Rate limiter
   private config: GenerationConfig;
   private storyBible?: StoryBible; // Store story bible for reference
   private qualityPlan?: QualityEnhancement; // Store quality enhancement plan
+  private narrativeVoice?: NarrativeVoice; // Store narrative voice consistency
   private failedSections: FailedSection[] = []; // NEW: Failed sections queue
   private checkpointDir: string; // NEW: Checkpoint directory
 
@@ -202,6 +208,13 @@ export class BookGenerationOrchestrator {
       model: 'gpt-4o',
       temperature: 0.3,
       maxTokens: 3000
+    });
+
+    // NEW: Initialize section transition agent
+    this.sectionTransitionAgent = new SectionTransitionAgent({
+      model: 'gpt-4o',
+      temperature: 0.7,
+      maxTokens: 2000
     });
 
     // NEW: Initialize rate limiter
@@ -458,29 +471,29 @@ export class BookGenerationOrchestrator {
     settings: BookSettings
   ): Promise<string> {
     try {
-      // Update book status
-             await this.updateBookProgress(bookId, {
-         step: GenerationStep.BACK_COVER,
-         progress: 10,
-         status: 'processing'
-       });
+      // Update progress in Redis
+      await progressTracker.updateProgress(bookId, {
+        status: 'GENERATING',
+        generationStep: 'PLANNING',
+        overallProgress: 10,
+        message: 'Generating back cover...'
+      });
 
       const backCover = await this.planningAgent.generateBackCover(userPrompt, settings);
 
       // Save back cover to database
       await prisma.book.update({
         where: { id: bookId },
-                 data: {
-           backCover,
-           generationStep: GenerationStep.BACK_COVER,
-           updatedAt: new Date()
-         }
+        data: {
+          backCover,
+          generationStep: GenerationStep.BACK_COVER,
+          updatedAt: new Date()
+        }
       });
 
-      await this.updateBookProgress(bookId, {
-        step: GenerationStep.BACK_COVER,
-        progress: 20,
-        status: 'completed'
+      await progressTracker.updateProgress(bookId, {
+        overallProgress: 25, // Fixed: was 20, now matches new system
+        message: 'Back cover generated! Starting comprehensive research...'
       });
 
       return backCover;
@@ -537,7 +550,7 @@ export class BookGenerationOrchestrator {
     try {
       await this.updateBookProgress(bookId, {
         step: GenerationStep.OUTLINE,
-        progress: 25,
+        progress: 40, // Fixed: was 25, now matches new system
         status: 'processing'
       });
 
@@ -1084,7 +1097,7 @@ export class BookGenerationOrchestrator {
 
       await this.updateBookProgress(bookId, {
         step: GenerationStep.CHAPTERS,
-        progress: 45,
+        progress: 50, // Fixed: was 45, now matches new system
         status: 'processing'
       });
 
@@ -1211,22 +1224,33 @@ export class BookGenerationOrchestrator {
     const totalChapters = book.chapters.length;
     let completedChapters = 0;
 
+    // Update progress in Redis
+    await progressTracker.updateProgress(bookId, {
+      status: 'GENERATING',
+      generationStep: 'CHAPTERS',
+      totalChapters,
+      overallProgress: 50, // Fixed: was 30, now matches new system
+      message: `Ready to write ${totalChapters} chapters! Beginning AI storytelling...`
+    });
+
     for (const chapter of book.chapters) {
+      // Update progress for each chapter
+      await progressTracker.startChapter(bookId, chapter.chapterNumber, totalChapters);
+      
       await this.generateChapterContent(bookId, chapter.id, book.settings);
       
       completedChapters++;
-      const progress = 45 + (completedChapters / totalChapters) * 45; // 45-90%
+      const progress = 50 + (completedChapters / totalChapters) * 40; // 50-90%
 
-      await this.updateBookProgress(bookId, {
-        step: GenerationStep.SECTIONS,
+      await progressTracker.updateProgress(bookId, {
         currentChapter: chapter.chapterNumber,
-        totalChapters,
-        progress,
-        status: 'processing'
+        overallProgress: progress,
+        message: `📝 Chapter ${chapter.chapterNumber} of ${totalChapters} completed! Moving to next chapter...`
       });
     }
 
     // Final supervision pass
+    await progressTracker.updateStep(bookId, 'PROOFREADING', '✨ ProofreaderGPT applying final polish and quality checks...');
     await this.runSupervisionPass(bookId);
 
     // NEW: Final checkpoint before completion
@@ -1251,11 +1275,8 @@ export class BookGenerationOrchestrator {
       }
     });
 
-    await this.updateBookProgress(bookId, {
-      step: GenerationStep.COMPLETE,
-      progress: 100,
-      status: 'completed'
-    });
+    // Mark as complete in Redis
+    await progressTracker.markComplete(bookId, totalChapters);
 
     // NEW: Clear checkpoint after successful completion
     await this.clearCheckpoint(bookId);
@@ -1358,25 +1379,64 @@ export class BookGenerationOrchestrator {
       );
 
       // FIXED: Calculate optimal sections (should be 2-4 sections per chapter typically)
-      const optimalSections = this.calculateOptimalSections(chapterWordTarget, settings);
-      const targetWordsPerSection = Math.floor(chapterWordTarget / optimalSections);
-
-      console.log(`📊 Chapter ${chapterContext.chapter.chapterNumber}: ${chapterWordTarget} words → ${optimalSections} sections (${targetWordsPerSection} words/section)`);
+      const sectionPlans = this.calculateOptimalSections(
+        chapterWordTarget, 
+        settings, 
+        chapterContext.chapter.chapterNumber, 
+        chapterContext.allChapters.length
+      );
+      
+      console.log(`📊 Chapter ${chapterContext.chapter.chapterNumber}: ${chapterWordTarget} words → ${sectionPlans.length} sections`);
 
       // FIXED: Ensure correct section count in database
-      await this.ensureCorrectSectionCount(chapterId, optimalSections);
+      await this.ensureCorrectSectionCount(chapterId, sectionPlans.length);
 
       // FIXED: Generate sections with proper context and word targeting
-      for (let sectionNum = 1; sectionNum <= optimalSections; sectionNum++) {
+      for (const sectionPlan of sectionPlans) {
+        // Update section progress
+        await progressTracker.updateSection(bookId, sectionPlan.number, sectionPlans.length);
+        
+        // Calculate and update overall progress during chapter generation
+        const overallChapterProgress = (sectionPlan.number - 1) / sectionPlans.length;
+        const currentChapterNumber = chapterContext.chapter.chapterNumber;
+        const totalChapters = chapterContext.allChapters.length;
+        
+        // Base progress (50%) + chapter progress (40% of the generation)
+        const baseProgress = 50;
+        const chapterProgressRange = 40;
+        const chapterProgressContribution = (currentChapterNumber - 1) / totalChapters * chapterProgressRange;
+        const currentChapterProgressContribution = (1 / totalChapters) * chapterProgressRange * overallChapterProgress;
+        const totalProgress = baseProgress + chapterProgressContribution + currentChapterProgressContribution;
+        
+        // Update overall progress in Redis
+        await progressTracker.updateProgress(bookId, {
+          overallProgress: Math.round(totalProgress),
+          message: `Writing Chapter ${currentChapterNumber} of ${totalChapters} - Section ${sectionPlan.number} of ${sectionPlans.length}...`,
+          currentChapter: currentChapterNumber,
+          totalChapters: totalChapters
+        });
+        
         await this.generateSectionContent(
           bookId,
           chapterId,
-          sectionNum,
-          optimalSections,
-          targetWordsPerSection,
+          sectionPlan.number,
+          sectionPlans.length,
+          sectionPlan.wordTarget,
           settings,
-          chapterContext
+          chapterContext,
+          sectionPlan
         );
+        
+        // Update progress after section completion
+        const sectionCompleteProgress = sectionPlan.number / sectionPlans.length;
+        const finalSectionProgress = baseProgress + chapterProgressContribution + (1 / totalChapters) * chapterProgressRange * sectionCompleteProgress;
+        
+        await progressTracker.updateProgress(bookId, {
+          overallProgress: Math.round(finalSectionProgress),
+          message: `Chapter ${currentChapterNumber} - Section ${sectionPlan.number} of ${sectionPlans.length} completed!`,
+          currentChapter: currentChapterNumber,
+          totalChapters: totalChapters
+        });
       }
 
       // Update chapter status
@@ -1464,7 +1524,8 @@ export class BookGenerationOrchestrator {
     totalSections: number,
     targetWords: number,
     settings: BookSettings,
-    chapterContext: any
+    chapterContext: any,
+    sectionPlan?: SectionPlan
   ): Promise<void> {
     try {
       console.log(`  📝 Generating Section ${sectionNumber}/${totalSections} with specialized writer`);
@@ -1481,16 +1542,34 @@ export class BookGenerationOrchestrator {
         throw new Error(`Section ${sectionNumber} not found`);
       }
 
-      // Parse scene data from prompt (stored during chapter creation)
+      // Parse section plan data from prompt (stored during chapter creation)
+      let storedSectionPlan: SectionPlan | undefined;
       let sceneData: any = {};
       let chapterPlan: any = {};
       
       try {
         const promptData = JSON.parse(sectionData.prompt);
+        storedSectionPlan = promptData.sectionPlan || sectionPlan;
         sceneData = promptData.sceneData || {};
         chapterPlan = promptData.chapterContext || {};
       } catch (parseError) {
-        console.warn('Could not parse scene data, using defaults');
+        console.warn('Could not parse section data, using defaults');
+        storedSectionPlan = sectionPlan;
+      }
+
+      // CRITICAL BUG FIX: Always use the freshly calculated sectionPlan, NEVER trust stored database data
+      const currentSectionPlan = sectionPlan; // Always use the fresh calculation
+      
+      // CRITICAL FIX: Always use the correct section word target (the parameter passed in)
+      const sectionWordTarget = targetWords; // This should be 800-1200 words, NOT the total book word count
+      
+      // VALIDATION: Detect and log if stored data is corrupted
+      if (storedSectionPlan && storedSectionPlan.wordTarget > 5000) {
+        console.error(`🚨 CORRUPTED DATA DETECTED: Stored section plan has ${storedSectionPlan.wordTarget} words target. This is wrong! Using fresh calculation: ${targetWords} words.`);
+      }
+      
+      if (sceneData.wordTarget && sceneData.wordTarget > 5000) {
+        console.error(`🚨 CORRUPTED DATA DETECTED: Scene data has ${sceneData.wordTarget} words target. This is wrong! Using fresh calculation: ${targetWords} words.`);
       }
 
       // Get previous content for context
@@ -1499,12 +1578,63 @@ export class BookGenerationOrchestrator {
       // Get character states from continuity tracker
       const characterStates = await this.getCharacterStates(chapterContext.chapter.chapterNumber);
 
+      // Extract narrative voice if not already established
+      if (!this.narrativeVoice && previousSections.length > 0) {
+        this.narrativeVoice = await this.sectionTransitionAgent.extractNarrativeVoice(
+          previousSections[0],
+          settings
+        );
+        console.log(`📝 Extracted narrative voice: ${this.narrativeVoice.perspective}, ${this.narrativeVoice.tense}`);
+      }
+
+      // Generate section transition if this is not the first section
+      let transitionText = '';
+      if (sectionNumber > 1 && previousSections.length > 0 && currentSectionPlan && this.narrativeVoice) {
+        const previousSectionContent = previousSections[0];
+        const lastSentence = previousSectionContent.split('.').slice(-2, -1)[0]?.trim() + '.' || '';
+        
+        const transitionContext: TransitionContext = {
+          previousSection: {
+            content: previousSectionContent,
+            type: 'development', // Would need to track this better in a full implementation
+            emotionalBeat: currentSectionPlan.emotionalBeat,
+            lastSentence,
+            mainCharacters: Object.keys(characterStates),
+            setting: chapterContext.chapter.title, // Simplified
+            timeframe: 'current'
+          },
+          nextSection: {
+            type: currentSectionPlan.type,
+            purpose: currentSectionPlan.purpose,
+            emotionalBeat: currentSectionPlan.emotionalBeat,
+            expectedCharacters: Object.keys(characterStates),
+            expectedSetting: chapterContext.chapter.title,
+            expectedTimeframe: 'current'
+          },
+          chapterNumber: chapterContext.chapter.chapterNumber,
+          totalChapters: chapterContext.allChapters.length,
+          chapterTitle: chapterContext.chapter.title,
+          bookSettings: settings,
+          narrativeVoice: this.narrativeVoice,
+          transitionType: currentSectionPlan.transitionIn,
+          transitionLength: 'medium'
+        };
+
+        try {
+          const transitionResult = await this.sectionTransitionAgent.generateTransition(transitionContext);
+          transitionText = transitionResult.transitionText;
+          console.log(`🔄 Generated ${transitionResult.transitionType} transition (quality: ${transitionResult.qualityScore}/100)`);
+        } catch (transitionError) {
+          console.warn('Failed to generate transition, continuing without:', transitionError);
+        }
+      }
+
       // NEW: Get quality enhancement elements for this section
       const qualityElements = this.getQualityElementsForSection(
         chapterContext.chapter.chapterNumber,
         sectionNumber
       );
-
+      
       // Build scene context for specialized writer
       const sceneContext: SceneContext = {
         sceneType: this.determineSceneType(sceneData),
@@ -1516,7 +1646,7 @@ export class BookGenerationOrchestrator {
         characters: sceneData.characters || chapterContext.chapter.characters || ['Protagonist'],
         conflict: sceneData.conflict || 'Character faces challenges',
         outcome: sceneData.outcome || 'Scene advances the story',
-        wordTarget: sceneData.wordTarget || targetWords,
+        wordTarget: sectionWordTarget, // FIXED: Always use the calculated section target
         mood: sceneData.mood || settings.tone,
         previousContent: previousSections.length > 0 ? previousSections[0] : undefined,
         researchContext: chapterPlan.researchFocus || [],
@@ -1527,6 +1657,23 @@ export class BookGenerationOrchestrator {
         foreshadowing: qualityElements.foreshadowing,
         thematicElements: qualityElements.themes
       };
+      
+      console.log(`📊 Section ${sectionNumber} word target: ${sectionWordTarget} words (chapter: ${chapterContext.chapter.chapterNumber})`);
+      
+      // DEBUG: Comprehensive logging to trace word count flow
+      const debugInfo = {
+        bookTotalWords: settings.wordCount,
+        chapterWordTarget: this.calculateChapterWordTarget(chapterContext.chapter, chapterContext.allChapters, settings),
+        sectionWordTarget: sectionWordTarget,
+        sceneContextWordTarget: sceneContext.wordTarget,
+        storedSceneWordTarget: sceneData.wordTarget,
+        currentSectionPlan: currentSectionPlan?.wordTarget,
+        chapterNumber: chapterContext.chapter.chapterNumber,
+        sectionNumber: sectionNumber,
+        bookId: bookId
+      };
+      
+      console.log(`🔍 Word Count Flow Debug:`, debugInfo);
 
       console.log(`    🎭 Using specialized writer for: ${sceneContext.sceneType} scene (emotional tone: ${qualityElements.emotionalBeat?.emotionType})`);
 
@@ -1549,24 +1696,8 @@ export class BookGenerationOrchestrator {
       // NEW: Record actual token usage for rate limiting
       this.rateLimiter.recordUsage(this.config.writingAgent.model, sceneResult.tokensUsed);
 
-      // NEW: Add scene transition if this isn't the first section
-      let finalSceneContent = sceneResult.content;
-      if (sectionNumber > 1 && previousSections.length > 0) {
-        console.log(`    🌉 Adding scene transition...`);
-        
-        const transition = await this.transitionEnhancer.createTransition(
-          previousSections[0],
-          {
-            setting: sceneContext.setting,
-            characters: sceneContext.characters,
-            timeChange: qualityElements.timeChange || 'Scene continues',
-            mood: sceneContext.mood
-          },
-          qualityElements.transitionType || 'bridge-paragraph'
-        );
-        
-        finalSceneContent = `${transition}\n\n${sceneResult.content}`;
-      }
+      // NEW: Integrate section transition if available
+      let finalSceneContent = transitionText ? `${transitionText}\n\n${sceneResult.content}` : sceneResult.content;
 
       // QUALITY GATE: Check with continuity inspector
       const consistencyCheck = await this.continuityAgent.checkChapterConsistency(
@@ -1774,7 +1905,7 @@ export class BookGenerationOrchestrator {
       // Get previous sections for context
       const previousSections = await this.getPreviousContent(bookId, chapterId, sectionNumber);
 
-      // Build basic section context
+      // Build basic section context with correct word count target
       const sectionContext: SectionContext = {
         bookTitle: chapterContext.book.title,
         bookPrompt: chapterContext.book.prompt,
@@ -1788,7 +1919,7 @@ export class BookGenerationOrchestrator {
         characters: settings.characterNames,
         settings: {
           ...settings,
-          wordCount: targetWords
+          wordCount: targetWords // This is the SECTION target, not the book target
         }
       };
 
@@ -1949,28 +2080,59 @@ export class BookGenerationOrchestrator {
   }
 
   /**
-   * Calculate optimal number of sections for a chapter based on word count
+   * Calculate optimal number of sections for a chapter using genre-specific planning
    */
-  private calculateOptimalSections(chapterWordCount: number, settings: BookSettings): number {
-    // Optimal section length for good AI generation and readability
-    const idealWordsPerSection = 1000; // Sweet spot for AI quality
-    const minWordsPerSection = 600;
-    const maxWordsPerSection = 1400;
+  private calculateOptimalSections(chapterWordCount: number, settings: BookSettings, chapterNumber?: number, totalChapters?: number): SectionPlan[] {
+    // Use genre-specific planning if we have chapter context
+    if (chapterNumber && totalChapters) {
+      return GenreStructurePlanner.planChapterSections(
+        chapterNumber,
+        chapterWordCount,
+        totalChapters,
+        settings
+      );
+    }
     
-    // Calculate sections needed
-    let sectionsNeeded = Math.round(chapterWordCount / idealWordsPerSection);
+    // Fallback to simple calculation for backward compatibility
+    const genreRules = GenreStructurePlanner.getStructureRules(settings.genre);
     
-    // Ensure section length is within acceptable range
+    // Calculate sections needed based on genre preferences
+    let sectionsNeeded = Math.round(chapterWordCount / genreRules.optimalSectionLength);
+    
+    // Ensure section length is within genre-appropriate range
     const wordsPerSection = chapterWordCount / sectionsNeeded;
     
-    if (wordsPerSection < minWordsPerSection) {
-      sectionsNeeded = Math.ceil(chapterWordCount / minWordsPerSection);
-    } else if (wordsPerSection > maxWordsPerSection) {
-      sectionsNeeded = Math.ceil(chapterWordCount / maxWordsPerSection);
+    if (wordsPerSection < genreRules.minSectionLength) {
+      sectionsNeeded = Math.ceil(chapterWordCount / genreRules.minSectionLength);
+    } else if (wordsPerSection > genreRules.maxSectionLength) {
+      sectionsNeeded = Math.ceil(chapterWordCount / genreRules.maxSectionLength);
+    }
+    
+    // Apply genre-specific constraints
+    if (sectionsNeeded === 1 && !genreRules.allowSingleSectionChapters) {
+      sectionsNeeded = 2;
     }
     
     // Minimum 1 section, maximum 5 sections per chapter
-    return Math.max(1, Math.min(5, sectionsNeeded));
+    const finalSectionCount = Math.max(1, Math.min(5, sectionsNeeded));
+    
+    // Create section plans
+    const sections: SectionPlan[] = [];
+    const baseWordCount = Math.floor(chapterWordCount / finalSectionCount);
+    
+    for (let i = 1; i <= finalSectionCount; i++) {
+      sections.push({
+        number: i,
+        type: i === 1 ? 'opening' : i === finalSectionCount ? 'bridge' : 'development',
+        wordTarget: baseWordCount + (i === finalSectionCount ? chapterWordCount % finalSectionCount : 0),
+        purpose: `Section ${i} development`,
+        emotionalBeat: 'neutral',
+        transitionIn: genreRules.preferredTransitions[0],
+        transitionOut: genreRules.preferredTransitions[0]
+      });
+    }
+    
+    return sections;
   }
 
   /**
@@ -2086,7 +2248,7 @@ export class BookGenerationOrchestrator {
       // NEW: Save supervision results to database or checkpoint
       await this.updateBookProgress(bookId, {
         step: GenerationStep.SUPERVISION,
-        progress: 98,
+        progress: 95, // Fixed: was 98, now matches new system
         status: 'completed'
       });
 
@@ -2096,7 +2258,7 @@ export class BookGenerationOrchestrator {
       // Continue with generation even if supervision fails
       await this.updateBookProgress(bookId, {
         step: GenerationStep.SUPERVISION,
-        progress: 98,
+        progress: 95, // Fixed: was 98, now matches new system
         status: 'completed'
       });
     }
@@ -2136,9 +2298,14 @@ export class BookGenerationOrchestrator {
       );
       
       // Calculate optimal sections for this chapter
-      const optimalSections = this.calculateOptimalSections(chapterWordTarget, book.settings);
+      const sectionPlans = this.calculateOptimalSections(
+        chapterWordTarget, 
+        book.settings, 
+        chapterData.number, 
+        outline.chapters.length
+      );
       
-      console.log(`Chapter ${chapterData.number}: ${chapterWordTarget} words, ${optimalSections} sections`);
+      console.log(`Chapter ${chapterData.number}: ${chapterWordTarget} words, ${sectionPlans.length} sections`);
 
       const chapter = await prisma.chapter.create({
         data: {
@@ -2151,17 +2318,20 @@ export class BookGenerationOrchestrator {
       });
 
       // Create dynamic section placeholders based on calculated optimal count
-      for (let i = 1; i <= optimalSections; i++) {
-        const sectionWordTarget = Math.floor(chapterWordTarget / optimalSections);
-        
+      for (const sectionPlan of sectionPlans) {
         await prisma.section.create({
           data: {
             chapterId: chapter.id,
-            sectionNumber: i,
-            title: `Section ${i}`,
+            sectionNumber: sectionPlan.number,
+            title: `Section ${sectionPlan.number}: ${sectionPlan.type}`,
             content: '', // Empty content initially
             wordCount: 0,
-            prompt: `Section ${i} of ${optimalSections} - Target: ~${sectionWordTarget} words`,
+            prompt: JSON.stringify({
+              sectionPlan,
+              purpose: sectionPlan.purpose,
+              emotionalBeat: sectionPlan.emotionalBeat,
+              transitionStyle: sectionPlan.transitionIn
+            }),
             aiModel: this.config.writingAgent.model,
             tokensUsed: 0,
             status: 'PLANNED' // Start as planned
@@ -2256,12 +2426,59 @@ export class BookGenerationOrchestrator {
     bookId: string,
     progress: Partial<GenerationProgress>
   ): Promise<void> {
-    // For now, just log progress
-    // In production, this would update a progress table or cache
-    console.log(`Book ${bookId} progress:`, progress);
+    // Convert GenerationProgress to BookProgress format for Redis
+    const mapGenerationStep = (step?: GenerationStep): BookProgress['generationStep'] => {
+      switch (step) {
+        case 'PROMPT': return 'PLANNING';
+        case 'BACK_COVER': return 'PLANNING';
+        case 'OUTLINE': return 'OUTLINE';
+        case 'CHAPTERS': return 'CHAPTERS';
+        case 'SECTIONS': return 'CHAPTERS';
+        case 'SUPERVISION': return 'PROOFREADING';
+        case 'COMPLETE': return 'COMPLETE';
+        default: return 'CHAPTERS';
+      }
+    };
+
+    // Generate meaningful status messages based on progress
+    const generateStatusMessage = (progress: Partial<GenerationProgress>): string => {
+      const progressPercent = progress.progress || 0;
+      const step = progress.step;
+      const currentChapter = progress.currentChapter || 0;
+      const totalChapters = progress.totalChapters || 0;
+
+      if (progressPercent <= 25) {
+        return 'AI analyzing your concept and generating back cover...';
+      } else if (progressPercent <= 40) {
+        return 'ResearchAgent conducting comprehensive research and building outline...';
+      } else if (progressPercent <= 50) {
+        return 'ChiefEditor planning optimal book structure and chapters...';
+      } else if (progressPercent <= 90 && totalChapters > 0) {
+        return `Writing Chapter ${currentChapter} of ${totalChapters} with AI storytelling...`;
+      } else if (progressPercent <= 95) {
+        return 'ProofreaderGPT applying final polish and quality enhancements...';
+      } else if (progressPercent >= 100) {
+        return 'Book generation completed successfully! 🎉';
+      } else {
+        return 'AI is working on your book...';
+      }
+    };
+
+    const redisProgress: Partial<BookProgress> = {
+      status: progress.status === 'processing' ? 'GENERATING' : 
+              progress.status === 'completed' ? 'COMPLETE' : 
+              progress.status === 'queued' ? 'PLANNING' : 'GENERATING',
+      generationStep: mapGenerationStep(progress.step),
+      overallProgress: progress.progress || 0,
+      message: generateStatusMessage(progress), // Dynamic status messages
+      currentChapter: progress.currentChapter || 0,
+      totalChapters: progress.totalChapters || 0
+    };
+
+    // Update Redis progress
+    await progressTracker.updateProgress(bookId, redisProgress);
     
-    // TODO: Implement real-time progress tracking
-    // Could use Redis, WebSockets, or database table
+    console.log(`Book ${bookId} progress updated in Redis:`, redisProgress);
   }
 
   /**
@@ -2276,20 +2493,37 @@ export class BookGenerationOrchestrator {
     
     console.error(`Generation error for book ${bookId} at step ${step}:`, errorMessage);
 
-    // Update book status
-    await prisma.book.update({
-      where: { id: bookId },
-      data: {
-        status: 'PLANNING', // Reset to planning state
-        updatedAt: new Date()
+    // Mark error in Redis
+    await progressTracker.markError(bookId, errorMessage);
+    
+    // Only reset book status for actual generation errors, NOT for database connection issues
+    const isDatabaseConnectionError = errorMessage.includes('database') || 
+                                    errorMessage.includes('connection') || 
+                                    errorMessage.includes('ETIMEDOUT') ||
+                                    errorMessage.includes('Can\'t reach database') ||
+                                    errorMessage.includes('ENOTFOUND') ||
+                                    errorMessage.includes('timeout');
+    
+    if (!isDatabaseConnectionError) {
+      // Only reset for actual generation errors, not infrastructure issues
+      try {
+        await prisma.book.update({
+          where: { id: bookId },
+          data: {
+            status: 'PLANNING', // Reset to planning state
+            updatedAt: new Date()
+          }
+        });
+        
+        console.log(`Book ${bookId} status reset due to generation error: ${errorMessage}`);
+      } catch (updateError) {
+        console.warn('Could not update book status in database:', updateError);
+        // Don't throw - this is likely another connection issue
       }
-    });
-
-    await this.updateBookProgress(bookId, {
-      step,
-      status: 'error',
-      error: errorMessage
-    });
+    } else {
+      console.warn(`⚠️ Database connection error detected - NOT resetting book status: ${errorMessage}`);
+      console.warn(`Book ${bookId} will remain in current state despite connection issue`);
+    }
   }
 
   /**
@@ -2316,11 +2550,11 @@ export class BookGenerationOrchestrator {
         progress = 0;
         break;
       case 'BACK_COVER':
-        progress = 20;
+        progress = 25; // Fixed: was 20, now matches Redis values
         status = 'processing';
         break;
       case 'OUTLINE':
-        progress = 40;
+        progress = 40; // Fixed: was 40, keeping consistent
         status = 'processing';
         break;
       case 'CHAPTERS':
@@ -2358,30 +2592,34 @@ export class BookGenerationOrchestrator {
     onProgress?: (progress: number, status: string) => void
   ): Promise<any> {
     try {
-      console.log('Starting enhanced book generation workflow...');
+      // Initialize Redis progress tracking
+      await progressTracker.updateProgress(bookId, {
+        status: 'GENERATING',
+        generationStep: 'PLANNING',
+        overallProgress: 0,
+        message: 'Starting enhanced book generation...'
+      });
       
-      onProgress?.(5, 'Generating back cover...');
+      onProgress?.(0, 'Analyzing your concept and requirements...');
       
-      // Step 1: Generate back cover (existing)
-      const backCover = await this.planningAgent.generateBackCover(userPrompt, settings);
+      // Step 1: Generate back cover
+      onProgress?.(5, 'Generating compelling back cover...');
+      const backCover = await this.generateBackCover(bookId, userPrompt, settings);
       
-      onProgress?.(15, 'Conducting comprehensive research...');
-      
-      // Step 2: NEW - Comprehensive Research Phase
+      onProgress?.(15, 'ResearchAgent conducting comprehensive research...');
+      // Step 2: PHASE 1 - Comprehensive research
       const research = await this.researchAgent.conductComprehensiveResearch(
         userPrompt,
         backCover,
         settings
       );
       
-      onProgress?.(25, 'Creating detailed outline...');
+      onProgress?.(25, 'Building comprehensive outline with research integration...');
+      // Step 3: Generate enhanced outline
+      const outline = await this.generateOutline(bookId);
       
-      // Step 3: Enhanced outline with research context
-      const outline = await this.planningAgent.generateOutline(userPrompt, backCover, settings);
-      
-      onProgress?.(35, 'Chief Editor planning book structure...');
-      
-      // Step 4: NEW - Strategic Planning by ChiefEditor
+      onProgress?.(35, 'ChiefEditor creating strategic chapter structure...');
+      // Step 4: Strategic planning with Chief Editor
       const structurePlan = await this.chiefEditorAgent.createBookStructurePlan(
         userPrompt,
         backCover,
@@ -2390,9 +2628,8 @@ export class BookGenerationOrchestrator {
         settings
       );
       
-      onProgress?.(45, 'Initializing continuity tracking...');
-      
-      // Step 5: NEW - Initialize Continuity Tracking
+      onProgress?.(45, 'Initializing continuity tracking system...');
+      // Step 5: Initialize continuity tracking
       await this.continuityAgent.initializeTracking(
         outline.characters,
         outline,
@@ -2400,9 +2637,8 @@ export class BookGenerationOrchestrator {
         settings
       );
       
-      onProgress?.(50, 'Starting content generation...');
-      
-      // Step 6: Enhanced content generation with research integration
+      onProgress?.(50, 'Starting chapter generation with research integration...');
+      // Step 6: PHASE 2 - Chapter generation with research integration
       const chapters = await this.generateChaptersWithResearch(
         bookId,
         structurePlan,
@@ -2423,6 +2659,9 @@ export class BookGenerationOrchestrator {
       
       onProgress?.(100, 'Book generation complete!');
       
+      // Mark as complete in Redis
+      await progressTracker.markComplete(bookId, polishedChapters.length);
+      
       return {
         backCover,
         outline,
@@ -2431,7 +2670,7 @@ export class BookGenerationOrchestrator {
         chapters: polishedChapters,
         metadata: {
           researchTopics: this.extractResearchTopics(research),
-          chapterStructure: structurePlan.chapters.map(c => ({
+          chapterStructure: structurePlan.chapters.map((c: any) => ({
             number: c.number,
             title: c.title,
             wordTarget: c.wordCountTarget,
@@ -2446,6 +2685,10 @@ export class BookGenerationOrchestrator {
       
     } catch (error) {
       console.error('Enhanced book generation failed:', error);
+      
+      // Mark as error in Redis
+      await progressTracker.markError(bookId, error instanceof Error ? error.message : 'Unknown error');
+      
       throw error;
     }
   }
@@ -2470,7 +2713,15 @@ export class BookGenerationOrchestrator {
       
       onProgress?.(50 + (i / totalChapters) * 40, `Writing Chapter ${chapterNumber}: ${chapterPlan.title}`);
       
+      // More granular progress during chapter generation
+      const chapterStartProgress = 50 + (i / totalChapters) * 40;
+      const chapterEndProgress = 50 + ((i + 1) / totalChapters) * 40;
+      const chapterProgressRange = chapterEndProgress - chapterStartProgress;
+      
       try {
+        // Update progress at start of chapter
+        onProgress?.(chapterStartProgress, `Starting Chapter ${chapterNumber}: ${chapterPlan.title}`);
+        
         // Generate chapter with research context
         const chapterContent = await this.generateChapterWithResearch(
           chapterPlan,
@@ -2479,6 +2730,9 @@ export class BookGenerationOrchestrator {
           settings
         );
         
+        // Update progress at 60% of chapter completion
+        onProgress?.(chapterStartProgress + (chapterProgressRange * 0.6), `Chapter ${chapterNumber} written, checking consistency...`);
+        
         // NEW - Consistency check before finalizing
         const consistencyReport = await this.continuityAgent.checkChapterConsistency(
           chapterNumber,
@@ -2486,6 +2740,9 @@ export class BookGenerationOrchestrator {
           chapterPlan.purpose,
           chapterPlan.researchFocus
         );
+        
+        // Update progress at chapter completion
+        onProgress?.(chapterEndProgress, `Chapter ${chapterNumber} completed with ${consistencyReport.overallScore}/100 consistency score`);
         
         chapters.push({
           number: chapterNumber,
@@ -2501,6 +2758,10 @@ export class BookGenerationOrchestrator {
         
       } catch (error) {
         console.error(`Error generating chapter ${chapterNumber}:`, error);
+        
+        // Update progress for failed chapter
+        onProgress?.(chapterEndProgress, `Chapter ${chapterNumber} completed with fallback content`);
+        
         // Continue with fallback chapter
         chapters.push({
           number: chapterNumber,
@@ -2545,11 +2806,27 @@ export class BookGenerationOrchestrator {
     const sections = [];
     let totalWordCount = 0;
     
+    // Calculate section word target (this is the key fix!)
+    const sectionWordTarget = Math.round(chapterPlan.wordCountTarget / sectionsNeeded);
+    
+    console.log(`🔍 Enhanced Workflow Word Count Flow:`, {
+      bookTotalWords: settings.wordCount,
+      chapterWordTarget: chapterPlan.wordCountTarget,
+      sectionsNeeded: sectionsNeeded,
+      sectionWordTarget: sectionWordTarget
+    });
+    
     for (let batch = 0; batch < sectionsNeeded; batch += maxConcurrent) {
       const batchEnd = Math.min(batch + maxConcurrent, sectionsNeeded);
       const batchPromises = [];
       
       for (let i = batch + 1; i <= batchEnd; i++) {
+        // Create section-specific settings with correct word target
+        const sectionSettings = {
+          ...settings,
+          wordCount: sectionWordTarget  // 🔧 FIX: Use section target, not book total
+        };
+        
         const sectionContext: SectionContext = {
           bookTitle: `${settings.genre} Story`,
           bookPrompt: `A ${settings.genre} story for ${settings.targetAudience}`,
@@ -2561,7 +2838,7 @@ export class BookGenerationOrchestrator {
           totalSections: sectionsNeeded,
           previousSections: sections.slice(0, i-1).map(s => s?.content || ''), // Previous completed sections
           characters: chapterPlan.characterFocus,
-          settings: settings
+          settings: sectionSettings  // 🔧 FIX: Use section-specific settings
         };
         
         // Create parallel SectionWriter instance for each section

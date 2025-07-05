@@ -1,0 +1,339 @@
+{
+  "characters": [
+    {
+      "name": "John Pemberton",
+      "currentLocation": "apothecary",
+      "physicalState": "damp from the night air",
+      "emotionalState": "contemplative, burdened, peaceful",
+      "knowledgeState": "close to a breakthrough with his tonic",
+      "relationships": {
+        "Frank M. Robinson": "supportive and collaborative",
+        "Asa Candler": "supportive and encouraging",
+        "Clara Pemberton": "supportive and concerned"
+      },
+      "lastSeen": 4
+    },
+    {
+      "name": "Frank M. Robinson",
+      "currentLocation": "apothecary",
+      "physicalState": "Normal",
+      "emotionalState": "curious, supportive",
+      "knowledgeState": "aware of the tonic's progress",
+      "relationships": {
+        "John Pemberton": "supportive and collaborative"
+      },
+      "lastSeen": 4
+    },
+    {
+      "name": "Asa Candler",
+      "currentLocation": "apothecary",
+      "physicalState": "Normal",
+      "emotionalState": "supportive, confident",
+      "knowledgeState": "aware of the tonic's progress",
+      "relationships": {
+        "John Pemberton": "supportive and encouraging"
+      },
+      "lastSeen": 4
+    },
+    {
+      "name": "Miss Clara Pemberton",
+      "currentLocation": "Initial setting",
+      "physicalState": "Normal",
+      "emotionalState": "Starting state",
+      "knowledgeState": "Initial knowledge",
+      "relationships": {},
+      "lastSeen": 0
+    }
+  ],
+  "plotPoints": [
+    {
+      "chapter": 1,
+      "event": "John and Frank discuss the potential of John's tonic",
+      "consequences": [
+        "John is motivated to continue his work",
+        "Frank is supportive"
+      ],
+      "affectedCharacters": [
+        "John Pemberton",
+        "Frank M. Robinson"
+      ],
+      "establishedFacts": [
+        "John is working on a tonic",
+        "Frank is supportive of John's work"
+      ]
+    },
+    {
+      "chapter": 1,
+      "event": "Asa Candler expresses interest in John's work",
+      "consequences": [
+        "Potential collaboration or support from Asa"
+      ],
+      "affectedCharacters": [
+        "John Pemberton",
+        "Asa Candler"
+      ],
+      "establishedFacts": [
+        "Asa is influential and interested in innovation"
+      ]
+    },
+    {
+      "chapter": 1,
+      "event": "Clara checks on John",
+      "consequences": [
+        "Clara shows concern for John's well-being"
+      ],
+      "affectedCharacters": [
+        "John Pemberton",
+        "Clara Pemberton"
+      ],
+      "establishedFacts": [
+        "Clara is supportive and concerned about John"
+      ]
+    },
+    {
+      "chapter": 2,
+      "event": "John prepares to test his new tonic",
+      "consequences": [
+        "potential success or failure of the tonic",
+        "impact on John's reputation"
+      ],
+      "affectedCharacters": [
+        "John Pemberton",
+        "Asa Candler"
+      ],
+      "establishedFacts": [
+        "John's tonic is ready for testing",
+        "Asa is interested in the tonic"
+      ]
+    },
+    {
+      "chapter": 2,
+      "event": "Asa tastes the tonic",
+      "consequences": [
+        "Asa's interest in the tonic increases",
+        "potential business opportunity"
+      ],
+      "affectedCharacters": [
+        "John Pemberton",
+        "Asa Candler"
+      ],
+      "establishedFacts": [
+        "Asa finds the tonic remarkable"
+      ]
+    },
+    {
+      "chapter": 3,
+      "event": "Asa Candler proposes a business partnership to John Pemberton",
+      "consequences": [
+        "John is conflicted about the future of his tonic",
+        "Clara advises caution"
+      ],
+      "affectedCharacters": [
+        "John Pemberton",
+        "Asa Candler",
+        "Clara Pemberton"
+      ],
+      "establishedFacts": [
+        "John's tonic has potential",
+        "Asa is interested in expanding its reach"
+      ]
+    },
+    {
+      "chapter": 3,
+      "event": "John and Asa discuss the tonic in the workshop",
+      "consequences": [
+        "John feels pressure to perfect the tonic",
+        "Asa emphasizes business urgency"
+      ],
+      "affectedCharacters": [
+        "John Pemberton",
+        "Asa Candler"
+      ],
+      "establishedFacts": [
+        "John is close to perfecting the tonic",
+        "There is growing interest in the city"
+      ]
+    },
+    {
+      "chapter": 4,
+      "event": "John unveils his tonic to Clara, Asa, and Frank",
+      "consequences": [
+        "The tonic is well-received",
+        "John feels a sense of peace and triumph"
+      ],
+      "affectedCharacters": [
+        "John Pemberton",
+        "Clara Pemberton",
+        "Asa Candler",
+        "Frank M. Robinson"
+      ],
+      "establishedFacts": [
+        "The tonic is a blend of spices and sweetness",
+        "The name 'Coca-Cola' is suggested by Frank"
+      ]
+    },
+    {
+      "chapter": 4,
+      "event": "Naming of the tonic as 'Coca-Cola'",
+      "consequences": [
+        "The name captures the essence of the tonic",
+        "It sets the stage for future branding"
+      ],
+      "affectedCharacters": [
+        "John Pemberton",
+        "Frank M. Robinson",
+        "Asa Candler"
+      ],
+      "establishedFacts": [
+        "The name is derived from the tonic's ingredients"
+      ]
+    }
+  ],
+  "timeline": [
+    {
+      "chapter": 1,
+      "timeReference": "Story begins",
+      "duration": "Initial"
+    },
+    {
+      "chapter": 1,
+      "timeReference": "dusk descended",
+      "absoluteTime": "evening"
+    },
+    {
+      "chapter": 2,
+      "timeReference": "The morning sun",
+      "duration": "morning"
+    },
+    {
+      "chapter": 2,
+      "timeReference": "The late afternoon sun",
+      "duration": "afternoon"
+    },
+    {
+      "chapter": 3,
+      "timeReference": "The rain fell in a soft, steady rhythm",
+      "duration": "evening"
+    },
+    {
+      "chapter": 3,
+      "timeReference": "The afternoon sun poured into John Pemberton's workshop",
+      "duration": "afternoon"
+    },
+    {
+      "chapter": 4,
+      "timeReference": "In the dim light of dawn",
+      "duration": "morning"
+    }
+  ],
+  "establishedFacts": [
+    "Historical fiction is a genre that blends historical facts with fictional elements to create a narrative set in the past.",
+    "Authors often conduct extensive research to ensure accuracy in portraying historical settings, events, and characters.",
+    "Historical fiction allows readers to engage with history in a more accessible and engaging way, bringing the past to life through storytelling.",
+    "Ancient Rome was situated on the Italian Peninsula, along the Tiber River. The city was built on seven hills, providing a strategic advantage for defense. The city was characterized by its grand architecture, including the Colosseum, the Roman Forum, and numerous temples and public buildings.",
+    "John Pemberton is working on a tonic",
+    "Asa Candler is a figure of influence in Atlanta",
+    "John's tonic is meant to be more than just a beverage",
+    "The tonic is a promise for healing and escape from pain",
+    "John's tonic is a blend of botanical extracts",
+    "The tonic is designed to soothe and rejuvenate",
+    "John Pemberton is working on a tonic that could change the world",
+    "The name 'Coca-Cola' is derived from the tonic's ingredients"
+  ],
+  "researchReferences": [
+    {
+      "fact": "Historical fiction is a genre that blends historical facts with fictional elements to create a narrative set in the past.",
+      "chapter": 0,
+      "context": "Initial research"
+    },
+    {
+      "fact": "Authors often conduct extensive research to ensure accuracy in portraying historical settings, events, and characters.",
+      "chapter": 0,
+      "context": "Initial research"
+    },
+    {
+      "fact": "John Pemberton is working on a tonic",
+      "chapter": 1,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "Asa Candler is a figure of influence in Atlanta",
+      "chapter": 1,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "John's tonic is meant to be more than just a beverage",
+      "chapter": 2,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "The tonic is a promise for healing and escape from pain",
+      "chapter": 2,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "John's tonic is a blend of botanical extracts",
+      "chapter": 3,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "The tonic is designed to soothe and rejuvenate",
+      "chapter": 3,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "John Pemberton is working on a tonic that could change the world",
+      "chapter": 4,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "The name 'Coca-Cola' is derived from the tonic's ingredients",
+      "chapter": 4,
+      "context": "Chapter content"
+    }
+  ],
+  "worldBuilding": [
+    {
+      "element": "Post-Civil War Atlanta",
+      "description": "A city in reconstruction, filled with opportunity and chaos",
+      "chapters": [
+        1
+      ]
+    },
+    {
+      "element": "John's pharmacy",
+      "description": "An oasis amidst chaos, filled with various tinctures and powders",
+      "chapters": [
+        1,
+        2
+      ]
+    },
+    {
+      "element": "Atlanta",
+      "description": "A city with a mix of modernity and Southern heritage",
+      "chapters": [
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "element": "John's workshop",
+      "description": "Filled with the scent of roots and herbs, a place of creation",
+      "chapters": [
+        3
+      ]
+    },
+    {
+      "element": "John's apothecary",
+      "description": "A blend of chemical aromas and soothing scents, a sanctuary for John",
+      "chapters": [
+        4
+      ]
+    }
+  ],
+  "metadata": {
+    "savedAt": "2025-07-05T20:34:26.012Z",
+    "version": "1.0"
+  }
+}

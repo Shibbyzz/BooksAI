@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { User } from '@supabase/auth-helpers-nextjs'
+import { User } from '@supabase/supabase-js'
 import { User as PrismaUser } from '@prisma/client'
 import { createClient } from '@/lib/supabase'
 
@@ -20,7 +20,11 @@ export function useAuth(): AuthState {
 
   const fetchPrismaUser = async (supabaseUserData: User) => {
     try {
-      const response = await fetch(`/api/users/${supabaseUserData.id}`)
+      const response = await fetch(`/api/users/${supabaseUserData.id}`, {
+        // Add timeout to prevent hanging
+        signal: AbortSignal.timeout(10000), // 10 second timeout
+      })
+      
       if (response.ok) {
         const userData = await response.json()
         setPrismaUser(userData)
@@ -35,7 +39,9 @@ export function useAuth(): AuthState {
             name: supabaseUserData.user_metadata?.name || null,
             avatar: supabaseUserData.user_metadata?.avatar_url || null,
           }),
+          signal: AbortSignal.timeout(10000), // 10 second timeout
         })
+        
         if (createResponse.ok) {
           const newUser = await createResponse.json()
           setPrismaUser(newUser)
@@ -43,6 +49,8 @@ export function useAuth(): AuthState {
       }
     } catch (error) {
       console.error('Error fetching/creating user:', error)
+      console.warn('Database unavailable, continuing with Supabase auth only')
+      // Don't set prismaUser to null if it fails - allow login to continue
     }
   }
 
@@ -57,7 +65,8 @@ export function useAuth(): AuthState {
       setSupabaseUser(user)
       
       if (user) {
-        await fetchPrismaUser(user)
+        // Don't block loading on database fetch
+        fetchPrismaUser(user)
       } else {
         setPrismaUser(null)
       }
@@ -75,7 +84,8 @@ export function useAuth(): AuthState {
       setSupabaseUser(user)
       
       if (user) {
-        await fetchPrismaUser(user)
+        // Don't block loading on database fetch
+        fetchPrismaUser(user)
       } else {
         setPrismaUser(null)
       }
@@ -90,6 +100,7 @@ export function useAuth(): AuthState {
     supabaseUser,
     prismaUser,
     loading,
-    isAuthenticated: !!supabaseUser && !!prismaUser,
+    // Allow authentication with just Supabase user if database is unavailable
+    isAuthenticated: !!supabaseUser,
   }
 } 

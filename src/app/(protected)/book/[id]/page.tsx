@@ -63,6 +63,9 @@ export default function BookDetailPage() {
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [generationLoading, setGenerationLoading] = useState(false)
   const [generationProgress, setGenerationProgress] = useState<GenerationProgress | null>(null)
+  const [lastKnownProgress, setLastKnownProgress] = useState<GenerationProgress | null>(null) // Track best known progress
+  const [usingFallback, setUsingFallback] = useState(false) // Track if using fallback data
+  const [lastUpdateTime, setLastUpdateTime] = useState<number | null>(null) // Track when progress was last updated
   const [isPolling, setIsPolling] = useState(false)
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
   
@@ -113,25 +116,90 @@ export default function BookDetailPage() {
 
   const fetchGenerationProgress = async () => {
     try {
-      const response = await fetch(`/api/ai/generate-book/${bookId}`)
+      // Use new Redis-based progress endpoint (much faster, no database overload)
+      const response = await fetch(`/api/ai/progress/${bookId}`)
       if (response.ok) {
-        const progressData = await response.json()
-        setGenerationProgress(progressData)
-        
-        // Only update book status if it significantly changed (and avoid micro-updates that cause loops)
-        if (book && (
-          progressData.status !== book.status || 
-          (progressData.generationStep !== book.generationStep && progressData.status === 'COMPLETE')
-        )) {
-          setBook(prev => prev ? { 
-            ...prev, 
-            status: progressData.status, 
-            generationStep: progressData.generationStep 
-          } : null)
+        const result = await response.json()
+        if (result.success && result.data) {
+          const progressData = result.data
+          
+          console.log('✅ Redis progress data received:', progressData) // Debug log
+          
+          // Transform Redis data to match existing UI expectations
+          const transformedProgress: GenerationProgress = {
+            status: progressData.status,
+            generationStep: progressData.generationStep,
+            progress: progressData.overallProgress, // Fix: use overallProgress from Redis
+            totalChapters: progressData.totalChapters,
+            completedChapters: progressData.currentChapter,
+            statusMessage: progressData.message, // Fix: use message from Redis
+            chapters: [] // TODO: Add chapter details from Redis if needed
+          }
+          
+          setGenerationProgress(transformedProgress)
+          setLastKnownProgress(transformedProgress) // Update last known good progress
+          setUsingFallback(false) // We're using live Redis data
+          setLastUpdateTime(Date.now()) // Track when we got fresh data
+          
+          // Only update book status if it significantly changed (and avoid micro-updates that cause loops)
+          if (book && (
+            progressData.status !== book.status || 
+            (progressData.generationStep !== book.generationStep && progressData.status === 'COMPLETE')
+          )) {
+            setBook(prev => prev ? { 
+              ...prev, 
+              status: progressData.status, 
+              generationStep: progressData.generationStep 
+            } : null)
+          }
+          
+          return // Exit early if Redis data was successfully processed
+        } else {
+          console.warn('⚠️ Redis API returned success but no data:', result)
         }
+      } else {
+        console.warn('⚠️ Redis API returned non-200 status:', response.status)
       }
     } catch (error) {
-      console.error('Error fetching generation progress:', error)
+      console.error('❌ Redis progress fetch failed:', error)
+    }
+    
+    // Fallback to database-based endpoint if Redis fails
+    console.log('🔄 Falling back to database-based progress...')
+    try {
+      const fallbackResponse = await fetch(`/api/ai/generate-book/${bookId}`)
+      if (fallbackResponse.ok) {
+        const progressData = await fallbackResponse.json()
+        console.log('✅ Database fallback progress data received:', progressData) // Debug log
+        
+        // Only use fallback data if we don't have better Redis data, or if fallback shows higher progress
+        if (!lastKnownProgress || progressData.progress >= (lastKnownProgress.progress || 0)) {
+          setGenerationProgress(progressData)
+          setUsingFallback(true) // We're using fallback data
+          setLastUpdateTime(Date.now()) // Track when we got fallback data
+          console.log('📊 Using fallback data (no better Redis data available)')
+        } else {
+          // Keep the last known good Redis data instead of downgrading
+          setGenerationProgress(lastKnownProgress)
+          setUsingFallback(true) // We're using cached data because Redis failed
+          // Don't update lastUpdateTime - keep it from the last good Redis data
+          console.log('📊 Keeping last known Redis data (fallback would downgrade progress)')
+        }
+      } else {
+        console.error('❌ Database fallback also failed:', fallbackResponse.status)
+        // If both fail, keep last known progress
+        if (lastKnownProgress) {
+          setGenerationProgress(lastKnownProgress)
+          setUsingFallback(true)
+        }
+      }
+    } catch (fallbackError) {
+      console.error('❌ Database fallback error:', fallbackError)
+      // If both fail, keep last known progress
+      if (lastKnownProgress) {
+        setGenerationProgress(lastKnownProgress)
+        setUsingFallback(true)
+      }
     }
   }
 
@@ -266,7 +334,7 @@ export default function BookDetailPage() {
 
   const getProgressPercentage = () => {
     if (generationProgress) {
-      return generationProgress.progress
+      return generationProgress.progress || 0 // Fix: use progress field (now correctly mapped)
     }
     
     // Fallback to step-based progress
@@ -281,17 +349,33 @@ export default function BookDetailPage() {
   }
 
   const getGenerationStepDescription = () => {
+    // Fix: Prioritize Redis statusMessage over fallback logic
     if (generationProgress?.statusMessage) {
+      console.log('📝 Displaying Redis status message:', generationProgress.statusMessage) // Debug log
       return generationProgress.statusMessage
     }
     
-    if (!generationProgress) return ''
+    console.log('⚠️ No Redis status message, using fallback. GenerationProgress:', generationProgress) // Debug log
     
+    if (!generationProgress) {
+      console.log('❌ No generationProgress data available') // Debug log
+      return ''
+    }
+    
+    // Fallback descriptions based on generation step
     switch (generationProgress.generationStep) {
+      case 'PLANNING':
+        return 'Planning your book structure and outline...'
+      case 'RESEARCH':
+        return 'Conducting research and gathering information...'
       case 'OUTLINE':
         return 'Creating detailed book outline...'
+      case 'STRUCTURE':
+        return 'Organizing chapters and structure...'
       case 'CHAPTERS':
         return `Writing chapters (${generationProgress.completedChapters}/${generationProgress.totalChapters} complete)...`
+      case 'PROOFREADING':
+        return 'Applying final proofreading and polish...'
       case 'COMPLETE':
         return 'Book generation complete!'
       default:
@@ -433,9 +517,27 @@ export default function BookDetailPage() {
                         />
                       </div>
                       {isGenerating && (
-                        <p className="text-sm text-muted-foreground mt-2">
-                          {getGenerationStepDescription()}
-                        </p>
+                        <div className="mt-3">
+                          <div className="flex items-center justify-center mb-2">
+                            <LoadingSpinner size="sm" className="mr-2" />
+                            <span className="text-sm font-medium text-foreground">
+                              {getGenerationStepDescription() || 'Processing...'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground text-center">
+                            Updates every few seconds • This process may take 10-30 minutes
+                            {usingFallback && (
+                              <span className="block mt-1 text-yellow-600">
+                                ⚠️ Using cached progress (Redis temporarily unavailable)
+                              </span>
+                            )}
+                            {lastUpdateTime && (
+                              <span className="block mt-1 text-xs text-gray-500">
+                                Last updated: {new Date(lastUpdateTime).toLocaleTimeString()}
+                              </span>
+                            )}
+                          </p>
+                        </div>
                       )}
                     </div>
                     
@@ -454,20 +556,6 @@ export default function BookDetailPage() {
                         <p className="text-xs text-muted-foreground mt-2">
                           This will begin the AI generation process
                         </p>
-                      </div>
-                    )}
-
-                    {isGenerating && (
-                      <div className="text-center">
-                        <div className="flex items-center justify-center mb-4">
-                          <LoadingSpinner size="sm" className="mr-2" />
-                          <span className="text-sm text-muted-foreground">
-                            {getGenerationStepDescription()}
-                          </span>
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          Updates every few seconds • This process may take 10-30 minutes
-                        </div>
                       </div>
                     )}
 

@@ -16,6 +16,11 @@ export const env = createEnv({
     NEXTAUTH_SECRET: z.string(),
     NEXTAUTH_URL: z.string().url().optional(),
 
+    // Redis Configuration
+    REDIS_HOST: z.string().default('localhost'),
+    REDIS_PORT: z.string().default('6379'),
+    REDIS_PASSWORD: z.string().optional(),
+
     // Sentry
     SENTRY_ORG: z.string().optional(),
     SENTRY_PROJECT: z.string().optional(),
@@ -76,6 +81,11 @@ export const env = createEnv({
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
     NEXTAUTH_URL: process.env.NEXTAUTH_URL,
+
+    // Redis Configuration
+    REDIS_HOST: process.env.REDIS_HOST,
+    REDIS_PORT: process.env.REDIS_PORT,
+    REDIS_PASSWORD: process.env.REDIS_PASSWORD,
 
     // Sentry
     SENTRY_ORG: process.env.SENTRY_ORG,
