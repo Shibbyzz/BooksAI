@@ -1,61 +1,35 @@
-import { createMiddlewareClient } from '@/lib/supabase-server'
+import { createServerClient } from '@/lib/supabase-server'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 export async function middleware(req: NextRequest) {
-  const { supabase, response } = createMiddlewareClient(req)
+  // Handle auth for protected routes
+  if (req.nextUrl.pathname.startsWith('/dashboard') || 
+      req.nextUrl.pathname.startsWith('/settings') ||
+      req.nextUrl.pathname.startsWith('/book') ||
+      req.nextUrl.pathname.startsWith('/admin')) {
+    
+    const supabase = await createServerClient()
+    const { data: { session } } = await supabase.auth.getSession()
 
-  // Refresh session if expired - required for Server Components
-  await supabase.auth.getSession()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  // Protected routes that require authentication
-  const protectedRoutes = ['/settings', '/admin', '/ai-chat', '/dashboard', '/book']
-  const adminRoutes = ['/admin']
-  const authRoutes = ['/login', '/signup']
-
-  // Check if the current path is protected
-  const isProtectedRoute = protectedRoutes.some(route =>
-    req.nextUrl.pathname.startsWith(route)
-  )
-
-  const isAdminRoute = adminRoutes.some(route =>
-    req.nextUrl.pathname.startsWith(route)
-  )
-
-  const isAuthRoute = authRoutes.some(route =>
-    req.nextUrl.pathname.startsWith(route)
-  )
-
-  // Redirect to login if accessing protected route without user
-  if (isProtectedRoute && !user) {
-    const redirectUrl = req.nextUrl.clone()
-    redirectUrl.pathname = '/login'
-    redirectUrl.searchParams.set('redirectTo', req.nextUrl.pathname)
-    return NextResponse.redirect(redirectUrl)
-  }
-
-  // Check admin access for admin routes
-  if (isAdminRoute && user) {
-    const userRole = user.user_metadata?.role
-    if (userRole !== 'admin') {
-      const redirectUrl = req.nextUrl.clone()
-      redirectUrl.pathname = '/'
+    if (!session) {
+      const redirectUrl = new URL('/login', req.url)
       return NextResponse.redirect(redirectUrl)
     }
   }
 
-  // Redirect authenticated users away from auth pages
-  if (user && isAuthRoute) {
-    const redirectUrl = req.nextUrl.clone()
-    redirectUrl.pathname = '/dashboard'
-    return NextResponse.redirect(redirectUrl)
+  // Handle auth pages - redirect if already logged in
+  if (req.nextUrl.pathname === '/login' || req.nextUrl.pathname === '/signup') {
+    const supabase = await createServerClient()
+    const { data: { session } } = await supabase.auth.getSession()
+
+    if (session) {
+      const redirectUrl = new URL('/dashboard', req.url)
+      return NextResponse.redirect(redirectUrl)
+    }
   }
 
-  return response
+  return NextResponse.next()
 }
 
 export const config = {
