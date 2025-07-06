@@ -3,40 +3,30 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useParams } from 'next/navigation'
-import { 
-  ArrowLeftIcon, 
-  ArrowRightIcon,
-  BookOpenIcon
-} from '@heroicons/react/24/outline'
+import { ArrowLeftIcon, ArrowRightIcon } from '@heroicons/react/24/outline'
 import { toast } from 'react-hot-toast'
 import Button from '@/components/ui/Button'
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/Card'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
+import { useTranslations } from '@/providers/IntlProvider'
 
-interface BookChapter {
-  id: string
+interface Chapter {
   chapterNumber: number
   title: string
-  summary: string
-  sections: {
-    id: string
-    sectionNumber: number
-    title?: string
-    content: string
-    wordCount: number
-  }[]
+  content: string
+  wordCount: number
+  status: string
 }
 
 interface BookData {
   id: string
   title: string
-  backCover?: string
-  chapters: BookChapter[]
+  author: string
+  genre: string
+  chapters: Chapter[]
+  totalWordCount: number
+  status: string
+  createdAt: string
+  updatedAt: string
 }
 
 export default function BookReaderPage() {
@@ -46,6 +36,8 @@ export default function BookReaderPage() {
   const router = useRouter()
   const params = useParams()
   const bookId = params.id as string
+  const t = useTranslations('bookReader')
+  const tCommon = useTranslations('common')
 
   useEffect(() => {
     if (bookId) {
@@ -61,17 +53,17 @@ export default function BookReaderPage() {
         setBook(bookData)
         
         if (bookData.chapters.length === 0) {
-          toast.error('This book has no readable content yet.')
+          toast.error(t('noContent'))
         }
       } else if (response.status === 404) {
-        toast.error('Book not found')
+        toast.error(t('notFound'))
         router.push('/dashboard')
       } else {
-        toast.error('Failed to load book content')
+        toast.error(t('loadError'))
       }
     } catch (error) {
       console.error('Error fetching book content:', error)
-      toast.error('Failed to load book content')
+      toast.error(t('loadError'))
     } finally {
       setLoading(false)
     }
@@ -101,9 +93,9 @@ export default function BookReaderPage() {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
-          <h2 className="text-xl font-semibold">Book not found</h2>
+          <h2 className="text-xl font-semibold">{t('notFound')}</h2>
           <Button className="mt-4" onClick={() => router.push('/dashboard')}>
-            Back to Dashboard
+            {t('backToDashboard')}
           </Button>
         </div>
       </div>
@@ -126,86 +118,55 @@ export default function BookReaderPage() {
                 className="mr-4"
               >
                 <ArrowLeftIcon className="h-4 w-4 mr-2" />
-                Back to Book
+                {t('backToBook')}
               </Button>
               <div>
                 <h1 className="text-xl font-bold">{book.title}</h1>
-                {currentChapterData && (
-                  <p className="text-sm text-muted-foreground">
-                    Chapter {currentChapterData.chapterNumber}: {currentChapterData.title}
-                  </p>
-                )}
+                <p className="text-sm text-muted-foreground">
+                  {currentChapterData ? `${currentChapterData.title}` : t('chapterNotFound')}
+                </p>
               </div>
             </div>
-            
-            {/* Chapter Navigation */}
-            {book.chapters.length > 1 && (
-              <div className="flex items-center space-x-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={goToPreviousChapter}
-                  disabled={currentChapter === 0}
-                >
-                  <ArrowLeftIcon className="h-4 w-4" />
-                </Button>
-                <span className="text-sm text-muted-foreground px-2">
-                  {currentChapter + 1} / {book.chapters.length}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={goToNextChapter}
-                  disabled={currentChapter === book.chapters.length - 1}
-                >
-                  <ArrowRightIcon className="h-4 w-4" />
-                </Button>
-              </div>
-            )}
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={goToPreviousChapter}
+                disabled={currentChapter === 0}
+              >
+                <ArrowLeftIcon className="h-4 w-4" />
+              </Button>
+              <span className="text-sm text-muted-foreground px-2">
+                {currentChapter + 1} / {book.chapters.length}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={goToNextChapter}
+                disabled={currentChapter === book.chapters.length - 1}
+              >
+                <ArrowRightIcon className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Content */}
+      {/* Reading Content */}
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {book.chapters.length === 0 ? (
-          <Card>
-            <CardContent className="text-center py-12">
-              <BookOpenIcon className="mx-auto h-16 w-16 text-muted-foreground/50 mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No content available</h3>
-              <p className="text-muted-foreground mb-4">
-                This book doesn't have any readable content yet. The generation might still be in progress.
-              </p>
-              <Button onClick={() => router.push(`/book/${bookId}`)}>
-                Back to Book Details
-              </Button>
-            </CardContent>
-          </Card>
-        ) : currentChapterData ? (
-          <div className="space-y-8">
-            {/* Chapter Header */}
-            <div className="text-center border-b pb-6">
-              <h2 className="text-3xl font-bold mb-2">
-                Chapter {currentChapterData.chapterNumber}
-              </h2>
-              <h3 className="text-xl text-muted-foreground">
-                {currentChapterData.title}
-              </h3>
-            </div>
-
-            {/* Chapter Content */}
-            <div className="space-y-6">
-              {currentChapterData.sections.map((section) => (
-                <div key={section.id} className="prose max-w-none">
-                  {section.title && section.title !== `Section ${section.sectionNumber}` && (
-                    <h4 className="text-lg font-semibold mb-4">{section.title}</h4>
-                  )}
-                  <div className="text-base leading-relaxed whitespace-pre-wrap">
-                    {section.content}
-                  </div>
-                </div>
-              ))}
-            </div>
+        {currentChapterData ? (
+          <div className="prose prose-lg max-w-none">
+            <h1 className="text-3xl font-bold mb-8">
+              {currentChapterData.title}
+            </h1>
+            
+            <div 
+              className="text-lg leading-relaxed"
+              style={{ lineHeight: '1.8' }}
+              dangerouslySetInnerHTML={{ 
+                __html: currentChapterData.content?.replace(/\n/g, '<br><br>') || '' 
+              }}
+            />
 
             {/* Chapter Navigation */}
             <div className="flex justify-between items-center pt-8 border-t">
@@ -215,11 +176,11 @@ export default function BookReaderPage() {
                 disabled={currentChapter === 0}
               >
                 <ArrowLeftIcon className="h-4 w-4 mr-2" />
-                Previous Chapter
+                {t('previousChapter')}
               </Button>
               
               <span className="text-sm text-muted-foreground">
-                Chapter {currentChapter + 1} of {book.chapters.length}
+                {t('chapterProgress')} {currentChapter + 1} / {book.chapters.length}
               </span>
               
               <Button
@@ -227,14 +188,14 @@ export default function BookReaderPage() {
                 onClick={goToNextChapter}
                 disabled={currentChapter === book.chapters.length - 1}
               >
-                Next Chapter
+                {t('nextChapter')}
                 <ArrowRightIcon className="h-4 w-4 ml-2" />
               </Button>
             </div>
           </div>
         ) : (
           <div className="text-center py-12">
-            <p className="text-muted-foreground">Chapter not found</p>
+            <p className="text-muted-foreground">{t('chapterNotFound')}</p>
           </div>
         )}
       </div>

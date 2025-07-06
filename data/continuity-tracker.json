@@ -1,42 +1,36 @@
 {
   "characters": [
     {
-      "name": "John Pemberton",
-      "currentLocation": "apothecary",
-      "physicalState": "damp from the night air",
-      "emotionalState": "contemplative, burdened, peaceful",
-      "knowledgeState": "close to a breakthrough with his tonic",
+      "name": "Max Edland",
+      "currentLocation": "island",
+      "physicalState": "exhausted, worn and scarred hands",
+      "emotionalState": "hopeful, determined, nostalgic",
+      "knowledgeState": "increased survival skills, hope for rescue",
       "relationships": {
-        "Frank M. Robinson": "supportive and collaborative",
-        "Asa Candler": "supportive and encouraging",
-        "Clara Pemberton": "supportive and concerned"
+        "Lina": "longing, motivation to survive",
+        "Anna": "source of motivation and hope",
+        "Wilson": "companionship deepened",
+        "Charlotte": "memory serves as motivation",
+        "Laura": "constant presence in his thoughts, motivating and tormenting",
+        "Emily": "remains determined to return to her",
+        "Sarah": "longing and determination to return to her",
+        "Claire": "memory provides motivation",
+        "Lisa": "memory provides strength",
+        "Anne": "motivated by memory of her"
       },
-      "lastSeen": 4
+      "lastSeen": 16
     },
     {
-      "name": "Frank M. Robinson",
-      "currentLocation": "apothecary",
+      "name": "Loch Ness",
+      "currentLocation": "Initial setting",
       "physicalState": "Normal",
-      "emotionalState": "curious, supportive",
-      "knowledgeState": "aware of the tonic's progress",
-      "relationships": {
-        "John Pemberton": "supportive and collaborative"
-      },
-      "lastSeen": 4
+      "emotionalState": "Starting state",
+      "knowledgeState": "Initial knowledge",
+      "relationships": {},
+      "lastSeen": 0
     },
     {
-      "name": "Asa Candler",
-      "currentLocation": "apothecary",
-      "physicalState": "Normal",
-      "emotionalState": "supportive, confident",
-      "knowledgeState": "aware of the tonic's progress",
-      "relationships": {
-        "John Pemberton": "supportive and encouraging"
-      },
-      "lastSeen": 4
-    },
-    {
-      "name": "Miss Clara Pemberton",
+      "name": "Wilson",
       "currentLocation": "Initial setting",
       "physicalState": "Normal",
       "emotionalState": "Starting state",
@@ -48,144 +42,456 @@
   "plotPoints": [
     {
       "chapter": 1,
-      "event": "John and Frank discuss the potential of John's tonic",
+      "event": "Plane crash into the sea",
       "consequences": [
-        "John is motivated to continue his work",
-        "Frank is supportive"
+        "Max and other passengers stranded",
+        "Need to find land for survival"
       ],
       "affectedCharacters": [
-        "John Pemberton",
-        "Frank M. Robinson"
+        "Max Edland"
       ],
       "establishedFacts": [
-        "John is working on a tonic",
-        "Frank is supportive of John's work"
+        "Max has a letter from Lina",
+        "Max is on a journey into the unknown"
       ]
     },
     {
       "chapter": 1,
-      "event": "Asa Candler expresses interest in John's work",
+      "event": "Max and others build a makeshift raft",
       "consequences": [
-        "Potential collaboration or support from Asa"
+        "Begin journey to find land",
+        "Hope amid despair"
       ],
       "affectedCharacters": [
-        "John Pemberton",
-        "Asa Candler"
+        "Max Edland"
       ],
       "establishedFacts": [
-        "Asa is influential and interested in innovation"
+        "Max is resourceful",
+        "Survival is the immediate priority"
       ]
     },
     {
       "chapter": 1,
-      "event": "Clara checks on John",
+      "event": "Max enters the Amazon rainforest",
       "consequences": [
-        "Clara shows concern for John's well-being"
+        "Begins exploration",
+        "Faces new challenges"
       ],
       "affectedCharacters": [
-        "John Pemberton",
-        "Clara Pemberton"
+        "Max Edland"
       ],
       "establishedFacts": [
-        "Clara is supportive and concerned about John"
+        "Max is in the Amazon rainforest",
+        "There are legends of a city of gold"
       ]
     },
     {
       "chapter": 2,
-      "event": "John prepares to test his new tonic",
+      "event": "Max constructs a makeshift shelter",
       "consequences": [
-        "potential success or failure of the tonic",
-        "impact on John's reputation"
+        "provides some protection from elements",
+        "offers a place to rest"
       ],
       "affectedCharacters": [
-        "John Pemberton",
-        "Asa Candler"
+        "Max Edland"
       ],
       "establishedFacts": [
-        "John's tonic is ready for testing",
-        "Asa is interested in the tonic"
+        "shelter is flimsy",
+        "jungle environment is harsh"
       ]
     },
     {
       "chapter": 2,
-      "event": "Asa tastes the tonic",
+      "event": "Max navigates treacherous terrain",
       "consequences": [
-        "Asa's interest in the tonic increases",
-        "potential business opportunity"
+        "nearly falls into a ravine",
+        "suffers minor injuries"
       ],
       "affectedCharacters": [
-        "John Pemberton",
-        "Asa Candler"
+        "Max Edland"
       ],
       "establishedFacts": [
-        "Asa finds the tonic remarkable"
+        "terrain is dangerous",
+        "jungle is dense and challenging"
+      ]
+    },
+    {
+      "chapter": 2,
+      "event": "Max discovers a waterfall",
+      "consequences": [
+        "momentary distraction and awe",
+        "reminder of beauty in desolation"
+      ],
+      "affectedCharacters": [
+        "Max Edland"
+      ],
+      "establishedFacts": [
+        "waterfall is hidden",
+        "nature is both beautiful and indifferent"
       ]
     },
     {
       "chapter": 3,
-      "event": "Asa Candler proposes a business partnership to John Pemberton",
+      "event": "Max builds a shelter",
       "consequences": [
-        "John is conflicted about the future of his tonic",
-        "Clara advises caution"
+        "provides protection from elements",
+        "boosts Max's confidence"
       ],
       "affectedCharacters": [
-        "John Pemberton",
-        "Asa Candler",
-        "Clara Pemberton"
+        "Max Edland"
       ],
       "establishedFacts": [
-        "John's tonic has potential",
-        "Asa is interested in expanding its reach"
-      ]
-    },
-    {
-      "chapter": 3,
-      "event": "John and Asa discuss the tonic in the workshop",
-      "consequences": [
-        "John feels pressure to perfect the tonic",
-        "Asa emphasizes business urgency"
-      ],
-      "affectedCharacters": [
-        "John Pemberton",
-        "Asa Candler"
-      ],
-      "establishedFacts": [
-        "John is close to perfecting the tonic",
-        "There is growing interest in the city"
+        "Max uses engineering skills for survival",
+        "Max relies on memories for emotional strength"
       ]
     },
     {
       "chapter": 4,
-      "event": "John unveils his tonic to Clara, Asa, and Frank",
+      "event": "First encounter with the sea monster",
       "consequences": [
-        "The tonic is well-received",
-        "John feels a sense of peace and triumph"
+        "Max realizes the island holds dangerous secrets",
+        "Max's resolve to survive and escape is strengthened"
       ],
       "affectedCharacters": [
-        "John Pemberton",
-        "Clara Pemberton",
-        "Asa Candler",
-        "Frank M. Robinson"
+        "Max Edland"
       ],
       "establishedFacts": [
-        "The tonic is a blend of spices and sweetness",
-        "The name 'Coca-Cola' is suggested by Frank"
+        "The sea is home to a monstrous creature"
       ]
     },
     {
       "chapter": 4,
-      "event": "Naming of the tonic as 'Coca-Cola'",
+      "event": "Max hears an eerie trill in the forest",
       "consequences": [
-        "The name captures the essence of the tonic",
-        "It sets the stage for future branding"
+        "Max becomes aware of another presence on the island",
+        "Heightened alertness and caution in Max's actions"
       ],
       "affectedCharacters": [
-        "John Pemberton",
-        "Frank M. Robinson",
-        "Asa Candler"
+        "Max Edland"
       ],
       "establishedFacts": [
-        "The name is derived from the tonic's ingredients"
+        "The island may not be deserted"
+      ]
+    },
+    {
+      "chapter": 5,
+      "event": "Max ventures into the jungle for resources",
+      "consequences": [
+        "gathers materials for shelter",
+        "reinforces survival skills"
+      ],
+      "affectedCharacters": [
+        "Max"
+      ],
+      "establishedFacts": [
+        "Max has a routine for survival",
+        "Max uses engineering skills for mapping"
+      ]
+    },
+    {
+      "chapter": 5,
+      "event": "Max uses a fishing net",
+      "consequences": [
+        "catches fish",
+        "provides food"
+      ],
+      "affectedCharacters": [
+        "Max"
+      ],
+      "establishedFacts": [
+        "Max has created a fishing net",
+        "Max uses engineering skills for survival"
+      ]
+    },
+    {
+      "chapter": 6,
+      "event": "Max reflects on his internal struggles and memories of loved ones",
+      "consequences": [
+        "Max experiences emotional turmoil",
+        "Max finds motivation to survive"
+      ],
+      "affectedCharacters": [
+        "Max Edland"
+      ],
+      "establishedFacts": [
+        "Max is an engineer",
+        "Max is stranded on an island"
+      ]
+    },
+    {
+      "chapter": 6,
+      "event": "Max interacts with Wilson, his makeshift companion",
+      "consequences": [
+        "Max finds a way to cope with loneliness",
+        "Max maintains his sanity"
+      ],
+      "affectedCharacters": [
+        "Max Edland"
+      ],
+      "establishedFacts": [
+        "Wilson is a wooden statuette",
+        "Max talks to Wilson to stave off loneliness"
+      ]
+    },
+    {
+      "chapter": 7,
+      "event": "Max explores the island and finds a clearing",
+      "consequences": [
+        "Max finds a potential campsite",
+        "Max encounters a wild boar"
+      ],
+      "affectedCharacters": [
+        "Max Edland"
+      ],
+      "establishedFacts": [
+        "The island has wild boars",
+        "The island has a dense forest"
+      ]
+    },
+    {
+      "chapter": 8,
+      "event": "Max discovers a circle of ancient stones with markings",
+      "consequences": [
+        "Max feels a sense of curiosity and significance",
+        "Provides a new line of investigation"
+      ],
+      "affectedCharacters": [
+        "Max Edland"
+      ],
+      "establishedFacts": [
+        "The island has ancient, possibly significant sites"
+      ]
+    },
+    {
+      "chapter": 8,
+      "event": "Max gathers resources from the jungle",
+      "consequences": [
+        "Ensures survival for another day",
+        "Strengthens resolve and hope"
+      ],
+      "affectedCharacters": [
+        "Max Edland"
+      ],
+      "establishedFacts": [
+        "The island provides resources like vines, fruits, and leaves"
+      ]
+    },
+    {
+      "chapter": 9,
+      "event": "Max experiences a tremor and sees a large creature in the sea",
+      "consequences": [
+        "Increased anxiety and awareness of danger",
+        "Determination to create a survival plan"
+      ],
+      "affectedCharacters": [
+        "Max Edland"
+      ],
+      "establishedFacts": [
+        "Presence of a large creature in the sea",
+        "Max's need for a survival strategy"
+      ]
+    },
+    {
+      "chapter": 9,
+      "event": "Max plans to scout the eastward cliffs",
+      "consequences": [
+        "Potential discovery of higher ground",
+        "Increased hope for survival"
+      ],
+      "affectedCharacters": [
+        "Max Edland"
+      ],
+      "establishedFacts": [
+        "Max's strategic approach to survival",
+        "Existence of eastward cliffs on the island"
+      ]
+    },
+    {
+      "chapter": 10,
+      "event": "Max wakes up and prepares for the day",
+      "consequences": [
+        "Max feels the isolation",
+        "Max prepares to fish for food"
+      ],
+      "affectedCharacters": [
+        "Max Edland"
+      ],
+      "establishedFacts": [
+        "Max is stranded on an island",
+        "Max uses makeshift tools for survival"
+      ]
+    },
+    {
+      "chapter": 10,
+      "event": "Max encounters ripples in the water",
+      "consequences": [
+        "Max is reminded of the island's dangers",
+        "Max remains vigilant"
+      ],
+      "affectedCharacters": [
+        "Max Edland"
+      ],
+      "establishedFacts": [
+        "The island is home to a sea monster"
+      ]
+    },
+    {
+      "chapter": 10,
+      "event": "Max catches a fish",
+      "consequences": [
+        "Max secures food for the day",
+        "Max feels a small triumph"
+      ],
+      "affectedCharacters": [
+        "Max Edland"
+      ],
+      "establishedFacts": [
+        "Fishing is a means of survival for Max"
+      ]
+    },
+    {
+      "chapter": 11,
+      "event": "Max hears a splash in the ocean",
+      "consequences": [
+        "Max becomes tense and alert",
+        "Curiosity and fear about Loch Ness"
+      ],
+      "affectedCharacters": [
+        "Max Edland"
+      ],
+      "establishedFacts": [
+        "Loch Ness is believed to be real and present"
+      ]
+    },
+    {
+      "chapter": 11,
+      "event": "Max resolves to make a plan to return to Sarah",
+      "consequences": [
+        "Renewed hope and determination"
+      ],
+      "affectedCharacters": [
+        "Max Edland"
+      ],
+      "establishedFacts": [
+        "Max's motivation to return home"
+      ]
+    },
+    {
+      "chapter": 12,
+      "event": "Max confronts the Loch Ness monster",
+      "consequences": [
+        "Max's belief in the creature is confirmed",
+        "Max is forced into a fight for survival"
+      ],
+      "affectedCharacters": [
+        "Max Edland"
+      ],
+      "establishedFacts": [
+        "The Loch Ness monster is real and present on the island"
+      ]
+    },
+    {
+      "chapter": 13,
+      "event": "Max prepares for a confrontation with the Loch Ness",
+      "consequences": [
+        "Max must face the creature to survive",
+        "Max's survival depends on his preparation and resolve"
+      ],
+      "affectedCharacters": [
+        "Max Edland"
+      ],
+      "establishedFacts": [
+        "The Loch Ness is real and a threat",
+        "Max has constructed a raft for escape"
+      ]
+    },
+    {
+      "chapter": 13,
+      "event": "The Loch Ness emerges and attacks",
+      "consequences": [
+        "Max must defend himself",
+        "The creature is wounded and retreats"
+      ],
+      "affectedCharacters": [
+        "Max Edland"
+      ],
+      "establishedFacts": [
+        "The Loch Ness is a formidable creature",
+        "Max is capable of defending himself"
+      ]
+    },
+    {
+      "chapter": 14,
+      "event": "Max survives a battle with a sea creature and explores the island",
+      "consequences": [
+        "Max gains a sense of accomplishment",
+        "Max discovers a clearing with fresh water",
+        "Max finds remnants of a camp"
+      ],
+      "affectedCharacters": [
+        "Max Edland"
+      ],
+      "establishedFacts": [
+        "Max is stranded on an island",
+        "There is a sea creature lurking nearby"
+      ]
+    },
+    {
+      "chapter": 15,
+      "event": "Max resolves to escape the island",
+      "consequences": [
+        "Max continues his journey through the jungle",
+        "Max finds a stream"
+      ],
+      "affectedCharacters": [
+        "Max Edland"
+      ],
+      "establishedFacts": [
+        "Max is an engineer",
+        "Max is motivated by Anne"
+      ]
+    },
+    {
+      "chapter": 15,
+      "event": "Max finds a stream",
+      "consequences": [
+        "renewed hope for escape",
+        "potential water source"
+      ],
+      "affectedCharacters": [
+        "Max Edland"
+      ],
+      "establishedFacts": [
+        "stream exists on the island"
+      ]
+    },
+    {
+      "chapter": 16,
+      "event": "Max reflects on his journey and survival on the island",
+      "consequences": [
+        "Max feels hopeful about rescue",
+        "Max is determined to find a way home"
+      ],
+      "affectedCharacters": [
+        "Max Edland"
+      ],
+      "establishedFacts": [
+        "Max has been marooned for weeks",
+        "Max has a companion named Wilson"
+      ]
+    },
+    {
+      "chapter": 16,
+      "event": "Max finds fresh water and food more easily",
+      "consequences": [
+        "Increased hope for survival",
+        "Boost in morale"
+      ],
+      "affectedCharacters": [
+        "Max Edland"
+      ],
+      "establishedFacts": [
+        "Max's survival skills have improved"
       ]
     }
   ],
@@ -197,143 +503,490 @@
     },
     {
       "chapter": 1,
-      "timeReference": "dusk descended",
-      "absoluteTime": "evening"
+      "timeReference": "As the sun climbed higher",
+      "duration": "several hours since crash"
     },
     {
       "chapter": 2,
+      "timeReference": "The sun dipped below the horizon",
+      "duration": "evening"
+    },
+    {
+      "chapter": 2,
+      "timeReference": "early evening",
+      "duration": "evening"
+    },
+    {
+      "chapter": 2,
+      "timeReference": "The night wore on",
+      "duration": "night"
+    },
+    {
+      "chapter": 3,
+      "timeReference": "The sun hung low in the sky",
+      "duration": "afternoon to dusk"
+    },
+    {
+      "chapter": 4,
+      "timeReference": "countless days under the relentless Mediterranean sun",
+      "duration": "several days"
+    },
+    {
+      "chapter": 5,
+      "timeReference": "The relentless sun hung high",
+      "duration": "midday"
+    },
+    {
+      "chapter": 5,
+      "timeReference": "As afternoon melted into evening",
+      "duration": "afternoon to evening"
+    },
+    {
+      "chapter": 6,
+      "timeReference": "The sun had dipped below the horizon",
+      "duration": "evening"
+    },
+    {
+      "chapter": 6,
+      "timeReference": "The sun dipped low on the horizon",
+      "duration": "evening"
+    },
+    {
+      "chapter": 7,
+      "timeReference": "morning sun",
+      "duration": "several hours",
+      "absoluteTime": "morning"
+    },
+    {
+      "chapter": 7,
+      "timeReference": "sun dipped lower",
+      "duration": "afternoon to evening",
+      "absoluteTime": "evening"
+    },
+    {
+      "chapter": 8,
+      "timeReference": "The sky was a vast expanse of bruised clouds, fading into twilight",
+      "duration": "evening to night"
+    },
+    {
+      "chapter": 8,
+      "timeReference": "The sun dipped slowly toward the horizon",
+      "duration": "late afternoon to evening"
+    },
+    {
+      "chapter": 9,
+      "timeReference": "The sun had barely begun its descent",
+      "duration": "evening"
+    },
+    {
+      "chapter": 9,
+      "timeReference": "as the twilight deepened",
+      "duration": "twilight"
+    },
+    {
+      "chapter": 9,
+      "timeReference": "The waning twilight",
+      "duration": "night"
+    },
+    {
+      "chapter": 10,
       "timeReference": "The morning sun",
       "duration": "morning"
     },
     {
-      "chapter": 2,
-      "timeReference": "The late afternoon sun",
-      "duration": "afternoon"
-    },
-    {
-      "chapter": 3,
-      "timeReference": "The rain fell in a soft, steady rhythm",
+      "chapter": 10,
+      "timeReference": "The sun was setting",
       "duration": "evening"
     },
     {
-      "chapter": 3,
-      "timeReference": "The afternoon sun poured into John Pemberton's workshop",
-      "duration": "afternoon"
+      "chapter": 11,
+      "timeReference": "The sun was a fading ember on the horizon",
+      "duration": "evening to night"
     },
     {
-      "chapter": 4,
-      "timeReference": "In the dim light of dawn",
-      "duration": "morning"
+      "chapter": 11,
+      "timeReference": "The sun was a molten orb sinking slowly into the horizon",
+      "duration": "evening"
+    },
+    {
+      "chapter": 12,
+      "timeReference": "near midday",
+      "duration": "several hours since morning"
+    },
+    {
+      "chapter": 13,
+      "timeReference": "late afternoon sun",
+      "duration": "afternoon to night"
+    },
+    {
+      "chapter": 13,
+      "timeReference": "as the sun dipped further down",
+      "duration": "sunset"
+    },
+    {
+      "chapter": 14,
+      "timeReference": "The sun dipped low on the horizon",
+      "duration": "one day",
+      "absoluteTime": "evening"
+    },
+    {
+      "chapter": 15,
+      "timeReference": "The sun hung low in the sky",
+      "duration": "afternoon to evening"
+    },
+    {
+      "chapter": 15,
+      "timeReference": "Night crept upon the island",
+      "duration": "evening to night"
+    },
+    {
+      "chapter": 15,
+      "timeReference": "With dawn, he would continue",
+      "duration": "night to dawn"
+    },
+    {
+      "chapter": 16,
+      "timeReference": "The evening sun, a warm amber orb, dipped towards the horizon",
+      "duration": "weeks"
     }
   ],
   "establishedFacts": [
-    "Historical fiction is a genre that blends historical facts with fictional elements to create a narrative set in the past.",
-    "Authors often conduct extensive research to ensure accuracy in portraying historical settings, events, and characters.",
-    "Historical fiction allows readers to engage with history in a more accessible and engaging way, bringing the past to life through storytelling.",
-    "Ancient Rome was situated on the Italian Peninsula, along the Tiber River. The city was built on seven hills, providing a strategic advantage for defense. The city was characterized by its grand architecture, including the Colosseum, the Roman Forum, and numerous temples and public buildings.",
-    "John Pemberton is working on a tonic",
-    "Asa Candler is a figure of influence in Atlanta",
-    "John's tonic is meant to be more than just a beverage",
-    "The tonic is a promise for healing and escape from pain",
-    "John's tonic is a blend of botanical extracts",
-    "The tonic is designed to soothe and rejuvenate",
-    "John Pemberton is working on a tonic that could change the world",
-    "The name 'Coca-Cola' is derived from the tonic's ingredients"
+    "Adventure genre typically involves a protagonist embarking on a journey or quest filled with challenges, risks, and excitement.",
+    "Common elements include exploration, discovery, survival, and often a sense of heroism or personal growth.",
+    "Settings can range from exotic locations like jungles or deserts to fantastical realms or even outer space.",
+    "The Lost City of El Dorado is said to be nestled within the dense, lush Amazon rainforest, surrounded by towering trees, thick undergrowth, and winding rivers. The terrain is rugged and challenging, with steep cliffs, hidden waterfalls, and treacherous ravines that make it difficult to navigate. The city itself is rumored to be hidden within a valley, its golden structures blending seamlessly with the natural surroundings.",
+    "The Amazon rainforest is known for its hot and humid climate, with frequent rainfall creating a constant mist that hangs in the air. The dense canopy overhead blocks out much of the sunlight, casting the forest floor in shadow. The air is filled with the sounds of chirping insects, calling birds, and rustling leaves, creating a cacophony of natural noises.",
+    "Max has a makeshift companion, Wilson",
+    "There are legends of El Dorado in the Amazon",
+    "Max uses a volleyball named Wilson as a confidant",
+    "Max has created a water filter from sand and fabric",
+    "Max uses a coconut as a companion named Wilson",
+    "Max has memories of Charlotte and Anna that motivate him",
+    "The sea is home to a monstrous creature",
+    "The island may not be deserted",
+    "Max has a tattered photograph of Emily",
+    "Max has a makeshift shelter from plane remnants",
+    "Max is an engineer",
+    "Max has a makeshift camp on the island",
+    "The island has a hidden waterfall",
+    "The island is home to vibrant parrots and insects",
+    "Max has a soccer ball named Wilson as a companion",
+    "Max's love told him 'Come back to me, Max' before he boarded the plane",
+    "Max has a makeshift shelter made from palm leaves and driftwood",
+    "Max uses a volleyball named Wilson for companionship",
+    "Max has an engineering degree",
+    "Max has a makeshift camp on the island",
+    "Max met Sarah during an engineering conference in Barcelona",
+    "Sarah has always wanted to go to the Maldives",
+    "The Loch Ness monster is a real threat on the island",
+    "The Loch Ness is a real creature on the island",
+    "Max has constructed a makeshift raft",
+    "Max is on a Mediterranean island",
+    "There is a sea creature referred to as the Loch Ness",
+    "Max has constructed a companion named Wilson from a coconut",
+    "Max has a background in engineering",
+    "Max has been marooned on the island for weeks",
+    "Max has a companion named Wilson made from palm fronds and coconuts"
   ],
   "researchReferences": [
     {
-      "fact": "Historical fiction is a genre that blends historical facts with fictional elements to create a narrative set in the past.",
+      "fact": "Adventure genre typically involves a protagonist embarking on a journey or quest filled with challenges, risks, and excitement.",
       "chapter": 0,
       "context": "Initial research"
     },
     {
-      "fact": "Authors often conduct extensive research to ensure accuracy in portraying historical settings, events, and characters.",
+      "fact": "Common elements include exploration, discovery, survival, and often a sense of heroism or personal growth.",
       "chapter": 0,
       "context": "Initial research"
     },
     {
-      "fact": "John Pemberton is working on a tonic",
+      "fact": "Max has a makeshift companion, Wilson",
       "chapter": 1,
       "context": "Chapter content"
     },
     {
-      "fact": "Asa Candler is a figure of influence in Atlanta",
+      "fact": "There are legends of El Dorado in the Amazon",
       "chapter": 1,
       "context": "Chapter content"
     },
     {
-      "fact": "John's tonic is meant to be more than just a beverage",
+      "fact": "Max uses a volleyball named Wilson as a confidant",
       "chapter": 2,
       "context": "Chapter content"
     },
     {
-      "fact": "The tonic is a promise for healing and escape from pain",
+      "fact": "Max has created a water filter from sand and fabric",
       "chapter": 2,
       "context": "Chapter content"
     },
     {
-      "fact": "John's tonic is a blend of botanical extracts",
+      "fact": "Max uses a coconut as a companion named Wilson",
       "chapter": 3,
       "context": "Chapter content"
     },
     {
-      "fact": "The tonic is designed to soothe and rejuvenate",
+      "fact": "Max has memories of Charlotte and Anna that motivate him",
       "chapter": 3,
       "context": "Chapter content"
     },
     {
-      "fact": "John Pemberton is working on a tonic that could change the world",
+      "fact": "The sea is home to a monstrous creature",
       "chapter": 4,
       "context": "Chapter content"
     },
     {
-      "fact": "The name 'Coca-Cola' is derived from the tonic's ingredients",
+      "fact": "The island may not be deserted",
       "chapter": 4,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "Max has a tattered photograph of Emily",
+      "chapter": 5,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "Max has a makeshift shelter from plane remnants",
+      "chapter": 5,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "Max is an engineer",
+      "chapter": 6,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "Max has a makeshift camp on the island",
+      "chapter": 6,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "The island has a hidden waterfall",
+      "chapter": 7,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "The island is home to vibrant parrots and insects",
+      "chapter": 7,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "Max has a soccer ball named Wilson as a companion",
+      "chapter": 8,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "Max's love told him 'Come back to me, Max' before he boarded the plane",
+      "chapter": 8,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "Max has a makeshift shelter made from palm leaves and driftwood",
+      "chapter": 9,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "Max uses a volleyball named Wilson for companionship",
+      "chapter": 9,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "Max has an engineering degree",
+      "chapter": 10,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "Max has a makeshift camp on the island",
+      "chapter": 10,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "Max met Sarah during an engineering conference in Barcelona",
+      "chapter": 11,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "Sarah has always wanted to go to the Maldives",
+      "chapter": 11,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "The Loch Ness monster is a real threat on the island",
+      "chapter": 12,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "The Loch Ness is a real creature on the island",
+      "chapter": 13,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "Max has constructed a makeshift raft",
+      "chapter": 13,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "Max is on a Mediterranean island",
+      "chapter": 14,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "There is a sea creature referred to as the Loch Ness",
+      "chapter": 14,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "Max has constructed a companion named Wilson from a coconut",
+      "chapter": 15,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "Max has a background in engineering",
+      "chapter": 15,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "Max has been marooned on the island for weeks",
+      "chapter": 16,
+      "context": "Chapter content"
+    },
+    {
+      "fact": "Max has a companion named Wilson made from palm fronds and coconuts",
+      "chapter": 16,
       "context": "Chapter content"
     }
   ],
   "worldBuilding": [
     {
-      "element": "Post-Civil War Atlanta",
-      "description": "A city in reconstruction, filled with opportunity and chaos",
+      "element": "Amazon rainforest",
+      "description": "Dense, pulsating wall of green, both a sanctuary and a trap",
       "chapters": [
         1
       ]
     },
     {
-      "element": "John's pharmacy",
-      "description": "An oasis amidst chaos, filled with various tinctures and powders",
+      "element": "El Dorado",
+      "description": "Legendary city of gold rumored to be hidden in the Amazon",
       "chapters": [
         1,
         2
       ]
     },
     {
-      "element": "Atlanta",
-      "description": "A city with a mix of modernity and Southern heritage",
+      "element": "jungle island",
+      "description": "remote, dense foliage, tropical downpours, humid",
       "chapters": [
-        2,
-        3,
-        4
+        2
       ]
     },
     {
-      "element": "John's workshop",
-      "description": "Filled with the scent of roots and herbs, a place of creation",
+      "element": "island",
+      "description": "A deserted island with a beach, jungle, and potential dangers",
+      "chapters": [
+        3,
+        6,
+        7,
+        8,
+        10,
+        12,
+        14,
+        15,
+        16
+      ]
+    },
+    {
+      "element": "shelter",
+      "description": "A lean-to made from natural materials like wood and leaves",
       "chapters": [
         3
       ]
     },
     {
-      "element": "John's apothecary",
-      "description": "A blend of chemical aromas and soothing scents, a sanctuary for John",
+      "element": "Mediterranean Sea",
+      "description": "The setting for Max's survival and encounter with the monster",
       "chapters": [
         4
+      ]
+    },
+    {
+      "element": "The island",
+      "description": "A place with dense thickets, lagoons, and possibly inhabited by unknown creatures",
+      "chapters": [
+        4,
+        13
+      ]
+    },
+    {
+      "element": "island environment",
+      "description": "Mediterranean island with jungle, freshwater spring, and beach",
+      "chapters": [
+        5
+      ]
+    },
+    {
+      "element": "Wilson",
+      "description": "A volleyball with a face painted by Max, symbolizing companionship",
+      "chapters": [
+        5,
+        10,
+        15,
+        16
+      ]
+    },
+    {
+      "element": "sea monster",
+      "description": "A mythical creature that haunts the waters around the island",
+      "chapters": [
+        6
+      ]
+    },
+    {
+      "element": "Loch Ness",
+      "description": "A monstrous legend shrouded in mystery and fear, possibly lurking on the island",
+      "chapters": [
+        7,
+        9,
+        11
+      ]
+    },
+    {
+      "element": "circle of stones",
+      "description": "A cluster of oddly shaped stones forming a crude circle with ancient markings",
+      "chapters": [
+        8
+      ]
+    },
+    {
+      "element": "Island",
+      "description": "A place with alluring sights masking sinister secrets, surrounded by Mediterranean waters",
+      "chapters": [
+        9,
+        11
+      ]
+    },
+    {
+      "element": "Loch Ness monster",
+      "description": "A legendary creature that is both terrifying and awe-inspiring",
+      "chapters": [
+        12
+      ]
+    },
+    {
+      "element": "The Loch Ness",
+      "description": "A legendary creature that guards the island",
+      "chapters": [
+        13
+      ]
+    },
+    {
+      "element": "sea creature",
+      "description": "A monstrous presence beneath the waves, referred to as the Loch Ness",
+      "chapters": [
+        14
       ]
     }
   ],
   "metadata": {
-    "savedAt": "2025-07-05T20:34:26.012Z",
+    "savedAt": "2025-07-05T22:04:23.497Z",
     "version": "1.0"
   }
 }

@@ -24,6 +24,7 @@ import {
   CardTitle,
 } from '@/components/ui/Card'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
+import { useTranslations } from '@/providers/IntlProvider'
 
 interface BookDetail {
   id: string
@@ -72,6 +73,8 @@ export default function BookDetailPage() {
   const router = useRouter()
   const params = useParams()
   const bookId = params.id as string
+  const t = useTranslations('bookDetail')
+  const tCommon = useTranslations('common')
 
   useEffect(() => {
     if (bookId) {
@@ -103,12 +106,12 @@ export default function BookDetailPage() {
         setBook(bookData)
         setEditForm({ title: bookData.title, prompt: bookData.prompt })
       } else if (response.status === 404) {
-        toast.error('Book not found')
+        toast.error(t('bookNotFound'))
         router.push('/dashboard')
       }
     } catch (error) {
       console.error('Error fetching book:', error)
-      toast.error('Failed to load book')
+      toast.error(t('failedToLoadBook'))
     } finally {
       setLoading(false)
     }
@@ -236,12 +239,12 @@ export default function BookDetailPage() {
         const updatedBook = await response.json()
         setBook(updatedBook)
         setEditing(false)
-        toast.success('Book updated successfully!')
+        toast.success(t('bookUpdatedSuccessfully'))
       } else {
-        toast.error('Failed to update book')
+        toast.error(t('failedToUpdateBook'))
       }
     } catch (error) {
-      toast.error('An unexpected error occurred')
+      toast.error(t('unexpectedError'))
     }
   }
 
@@ -252,19 +255,19 @@ export default function BookDetailPage() {
       })
 
       if (response.ok) {
-        toast.success('Book deleted successfully!')
+        toast.success(t('bookDeletedSuccessfully'))
         router.push('/dashboard')
       } else {
-        toast.error('Failed to delete book')
+        toast.error(t('failedToDeleteBook'))
       }
     } catch (error) {
-      toast.error('An unexpected error occurred')
+      toast.error(t('unexpectedError'))
     }
   }
 
   const startGeneration = async () => {
     if (!book?.settings || !book?.backCover) {
-      toast.error('Book needs settings and back cover before generation can start')
+      toast.error(t('generationRequiresSettingsAndBackCover'))
       return
     }
 
@@ -277,7 +280,7 @@ export default function BookDetailPage() {
 
       if (response.ok) {
         const result = await response.json()
-        toast.success('Book generation started! 🚀')
+        toast.success(t('bookGenerationStarted'))
         
         // Update book status immediately
         setBook(prev => prev ? { 
@@ -290,10 +293,10 @@ export default function BookDetailPage() {
         startProgressPolling()
       } else {
         const error = await response.json()
-        toast.error(error.error || 'Failed to start book generation')
+        toast.error(error.error || t('failedToStartBookGeneration'))
       }
     } catch (error) {
-      toast.error('Failed to start book generation')
+      toast.error(t('failedToStartBookGeneration'))
     } finally {
       setGenerationLoading(false)
     }
@@ -303,31 +306,31 @@ export default function BookDetailPage() {
     switch (status) {
       case 'PLANNING':
         return { 
-          text: 'Planning', 
+          text: t('planning'), 
           color: 'text-yellow-600 bg-yellow-50', 
           icon: ClockIcon,
-          description: 'Setting up your book concept and structure'
+          description: t('planningDescription')
         }
       case 'GENERATING':
         return { 
-          text: 'Writing', 
+          text: t('writing'), 
           color: 'text-blue-600 bg-blue-50', 
           icon: PencilIcon,
-          description: 'AI is actively writing your book chapters'
+          description: t('writingDescription')
         }
       case 'COMPLETE':
         return { 
-          text: 'Complete', 
+          text: t('complete'), 
           color: 'text-green-600 bg-green-50', 
           icon: CheckCircleIcon,
-          description: 'Your book is finished and ready to read'
+          description: t('completeDescription')
         }
       default:
         return { 
           text: status, 
           color: 'text-gray-600 bg-gray-50', 
           icon: BookOpenIcon,
-          description: 'Processing...'
+          description: t('processing')
         }
     }
   }
@@ -365,21 +368,21 @@ export default function BookDetailPage() {
     // Fallback descriptions based on generation step
     switch (generationProgress.generationStep) {
       case 'PLANNING':
-        return 'Planning your book structure and outline...'
+        return t('progress.planning')
       case 'RESEARCH':
-        return 'Conducting research and gathering information...'
+        return t('progress.research')
       case 'OUTLINE':
-        return 'Creating detailed book outline...'
+        return t('progress.outline')
       case 'STRUCTURE':
-        return 'Organizing chapters and structure...'
+        return t('progress.structure')
       case 'CHAPTERS':
-        return `Writing chapters (${generationProgress.completedChapters}/${generationProgress.totalChapters} complete)...`
+        return t('progress.chapters').replace('{completed}', generationProgress.completedChapters?.toString() || '0').replace('{total}', generationProgress.totalChapters?.toString() || '0')
       case 'PROOFREADING':
-        return 'Applying final proofreading and polish...'
+        return t('progress.proofreading')
       case 'COMPLETE':
-        return 'Book generation complete!'
+        return t('progress.complete')
       default:
-        return 'Processing...'
+        return t('progress.processing')
     }
   }
 
@@ -395,9 +398,9 @@ export default function BookDetailPage() {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
-          <h2 className="text-xl font-semibold">Book not found</h2>
+          <h2 className="text-xl font-semibold">{t('bookNotFound')}</h2>
           <Button className="mt-4" onClick={() => router.push('/dashboard')}>
-            Back to Dashboard
+            {t('backToDashboard')}
           </Button>
         </div>
       </div>
@@ -423,7 +426,7 @@ export default function BookDetailPage() {
                 className="mr-4"
               >
                 <ArrowLeftIcon className="h-4 w-4 mr-2" />
-                Back to Library
+                {t('backToLibrary')}
               </Button>
               <div>
                 <h1 className="text-2xl font-bold">{book.title}</h1>
@@ -446,7 +449,7 @@ export default function BookDetailPage() {
                 disabled={book.status === 'GENERATING'}
               >
                 <PencilIcon className="h-4 w-4 mr-2" />
-                Edit
+                {t('edit')}
               </Button>
               <Button
                 variant="outline"
@@ -455,7 +458,7 @@ export default function BookDetailPage() {
                 className="text-red-600 hover:text-red-700"
               >
                 <TrashIcon className="h-4 w-4 mr-2" />
-                Delete
+                {t('delete')}
               </Button>
             </div>
           </div>
@@ -467,28 +470,30 @@ export default function BookDetailPage() {
         {editing ? (
           <Card>
             <CardHeader>
-              <CardTitle>Edit Book</CardTitle>
-              <CardDescription>Update your book details</CardDescription>
+              <CardTitle>{t('edit')}</CardTitle>
+              <CardDescription>{t('updateBookDetails')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <Input
-                label="Title"
+                label={t('title')}
                 value={editForm.title}
                 onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                required
               />
               <div>
-                <label className="block text-sm font-medium mb-2">Prompt</label>
+                <label className="block text-sm font-medium mb-2">{t('prompt')}</label>
                 <textarea
                   value={editForm.prompt}
                   onChange={(e) => setEditForm({ ...editForm, prompt: e.target.value })}
                   className="w-full min-h-[200px] px-3 py-2 border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent resize-vertical"
+                  required
                 />
               </div>
               <div className="flex justify-end space-x-2">
                 <Button variant="outline" onClick={() => setEditing(false)}>
-                  Cancel
+                  {t('cancel')}
                 </Button>
-                <Button onClick={handleSaveEdit}>Save Changes</Button>
+                <Button onClick={handleSaveEdit}>{tCommon('saveChanges')}</Button>
               </div>
             </CardContent>
           </Card>
@@ -500,14 +505,14 @@ export default function BookDetailPage() {
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center">
-                    📈 Generation Progress
+                    📈 {t('generationProgress')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
                     <div>
                       <div className="flex justify-between text-sm mb-2">
-                        <span>Progress</span>
+                        <span>{t('progress.progress')}</span>
                         <span>{progress}%</span>
                       </div>
                       <div className="w-full bg-muted rounded-full h-2">
@@ -521,19 +526,19 @@ export default function BookDetailPage() {
                           <div className="flex items-center justify-center mb-2">
                             <LoadingSpinner size="sm" className="mr-2" />
                             <span className="text-sm font-medium text-foreground">
-                              {getGenerationStepDescription() || 'Processing...'}
+                              {getGenerationStepDescription() || t('progress.processing')}
                             </span>
                           </div>
                           <p className="text-xs text-muted-foreground text-center">
-                            Updates every few seconds • This process may take 10-30 minutes
+                            {t('progress.updateFrequency')}
                             {usingFallback && (
                               <span className="block mt-1 text-yellow-600">
-                                ⚠️ Using cached progress (Redis temporarily unavailable)
+                                {t('progress.redisUnavailable')}
                               </span>
                             )}
                             {lastUpdateTime && (
                               <span className="block mt-1 text-xs text-gray-500">
-                                Last updated: {new Date(lastUpdateTime).toLocaleTimeString()}
+                                {t('progress.lastUpdated').replace('{time}', new Date(lastUpdateTime).toLocaleTimeString())}
                               </span>
                             )}
                           </p>
@@ -551,10 +556,10 @@ export default function BookDetailPage() {
                           className="px-8"
                         >
                           <PlayIcon className="h-5 w-5 mr-2" />
-                          Start Writing Book
+                          {t('startWritingBook')}
                         </Button>
                         <p className="text-xs text-muted-foreground mt-2">
-                          This will begin the AI generation process
+                          {t('startWritingDescription')}
                         </p>
                       </div>
                     )}
@@ -562,16 +567,16 @@ export default function BookDetailPage() {
                     {book.status === 'COMPLETE' && (
                       <div className="text-center">
                         <CheckCircleIcon className="mx-auto h-12 w-12 text-green-600 mb-2" />
-                        <h3 className="text-lg font-semibold mb-2">Book Complete!</h3>
+                        <h3 className="text-lg font-semibold mb-2">{t('bookComplete')}</h3>
                         <div className="space-x-2">
                           <Button 
                             size="lg"
                             onClick={() => router.push(`/book/${bookId}/read`)}
                           >
-                            📖 Read Book
+                            {t('readBook')}
                           </Button>
                           <Button variant="outline">
-                            📤 Export
+                            {t('export')}
                           </Button>
                         </div>
                       </div>
@@ -584,7 +589,7 @@ export default function BookDetailPage() {
               {book.backCover && (
                 <Card>
                   <CardHeader>
-                    <CardTitle>📖 Back Cover</CardTitle>
+                    <CardTitle>{t('backCover')}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="bg-muted p-4 rounded-md">
@@ -600,7 +605,7 @@ export default function BookDetailPage() {
               {generationProgress && generationProgress.chapters.length > 0 && (
                 <Card>
                   <CardHeader>
-                    <CardTitle>📚 Chapters</CardTitle>
+                    <CardTitle>{t('chapters')}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-2">
@@ -611,12 +616,12 @@ export default function BookDetailPage() {
                         >
                           <div>
                             <h4 className="font-medium">
-                              Chapter {chapter.chapterNumber}: {chapter.title}
+                              {t('chapter').replace('{number}', chapter.chapterNumber.toString())}: {chapter.title}
                             </h4>
                             <p className="text-sm text-muted-foreground">
                               {chapter.sectionsTotal > 0 
-                                ? `${chapter.sectionsComplete}/${chapter.sectionsTotal} sections complete`
-                                : 'Planning...'
+                                ? `${chapter.sectionsComplete}/${chapter.sectionsTotal} ${t('sectionsComplete')}`
+                                : t('planning...')
                               }
                             </p>
                           </div>
@@ -627,8 +632,8 @@ export default function BookDetailPage() {
                                 ? 'bg-blue-100 text-blue-700'
                                 : 'bg-yellow-100 text-yellow-700'
                           }`}>
-                            {chapter.status === 'COMPLETE' ? 'Done' : 
-                             chapter.status === 'GENERATING' ? 'Writing...' : 'Planned'}
+                            {chapter.status === 'COMPLETE' ? t('done') : 
+                             chapter.status === 'GENERATING' ? t('writing...') : t('planned')}
                           </span>
                         </div>
                       ))}
@@ -642,35 +647,35 @@ export default function BookDetailPage() {
             <div className="space-y-6">
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg">Book Details</CardTitle>
+                  <CardTitle className="text-lg">{t('bookDetails')}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {book.settings && (
                     <>
                       <div>
-                        <span className="text-sm text-muted-foreground">Genre</span>
+                        <span className="text-sm text-muted-foreground">{t('genre')}</span>
                         <p className="text-sm font-medium">{book.settings.genre}</p>
                       </div>
                       <div>
-                        <span className="text-sm text-muted-foreground">Target Length</span>
-                        <p className="text-sm font-medium">{book.settings.wordCount?.toLocaleString()} words</p>
+                        <span className="text-sm text-muted-foreground">{t('targetLength')}</span>
+                        <p className="text-sm font-medium">{book.settings.wordCount?.toLocaleString()} {t('words')}</p>
                       </div>
                       <div>
-                        <span className="text-sm text-muted-foreground">Tone</span>
+                        <span className="text-sm text-muted-foreground">{t('tone')}</span>
                         <p className="text-sm font-medium">{book.settings.tone}</p>
                       </div>
                       <div>
-                        <span className="text-sm text-muted-foreground">Audience</span>
+                        <span className="text-sm text-muted-foreground">{t('audience')}</span>
                         <p className="text-sm font-medium">{book.settings.targetAudience}</p>
                       </div>
                     </>
                   )}
                   <div>
-                    <span className="text-sm text-muted-foreground">Created</span>
+                    <span className="text-sm text-muted-foreground">{t('created')}</span>
                     <p className="text-sm">{new Date(book.createdAt).toLocaleDateString()}</p>
                   </div>
                   <div>
-                    <span className="text-sm text-muted-foreground">Last Updated</span>
+                    <span className="text-sm text-muted-foreground">{t('lastUpdated')}</span>
                     <p className="text-sm">{new Date(book.updatedAt).toLocaleDateString()}</p>
                   </div>
                 </CardContent>
@@ -679,17 +684,17 @@ export default function BookDetailPage() {
               {!book.settings && (
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-lg text-yellow-600">⚠️ Setup Required</CardTitle>
+                    <CardTitle className="text-lg text-yellow-600">{t('setupRequired')}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <p className="text-sm text-muted-foreground mb-4">
-                      This book needs to complete the setup process before generation can begin.
+                      {t('setupDescription')}
                     </p>
                     <Button 
                       className="w-full" 
                       onClick={() => router.push('/book/create')}
                     >
-                      Complete Setup
+                      {t('completeSetup')}
                     </Button>
                   </CardContent>
                 </Card>
@@ -704,9 +709,9 @@ export default function BookDetailPage() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <Card className="w-full max-w-md mx-4">
             <CardHeader>
-              <CardTitle>Delete Book</CardTitle>
+              <CardTitle>{t('deleteTitle')}</CardTitle>
               <CardDescription>
-                Are you sure you want to delete "{book.title}"? This action cannot be undone.
+                {t('deleteDescription').replace('{title}', book.title)}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -715,13 +720,13 @@ export default function BookDetailPage() {
                   variant="outline"
                   onClick={() => setDeleteConfirm(false)}
                 >
-                  Cancel
+                  {t('cancel')}
                 </Button>
                 <Button
                   variant="destructive"
                   onClick={handleDelete}
                 >
-                  Delete Book
+                  {t('deleteBook')}
                 </Button>
               </div>
             </CardContent>

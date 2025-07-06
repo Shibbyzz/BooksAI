@@ -16,6 +16,7 @@ export default function HomePage() {
     }
   }, [user, loading, router])
 
+  // Show loading state while checking auth
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -24,6 +25,7 @@ export default function HomePage() {
     )
   }
 
+  // If user is logged in, redirect to dashboard (handled by useEffect)
   if (user) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -32,5 +34,10 @@ export default function HomePage() {
     )
   }
 
-  return <Hero />
+  // Show Hero component for non-authenticated users
+  return (
+    <>
+      <Hero />
+    </>
+  )
 }

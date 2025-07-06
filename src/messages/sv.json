@@ -1,0 +1,420 @@
+{
+  "navigation": {
+    "myBooks": "Mina böcker",
+    "settings": "Inställningar"
+  },
+  "hero": {
+    "title": "Förvandla Dina Idéer Till",
+    "titleHighlight": "Kompletta Böcker",
+    "subtitle": "Revolutionerande AI-driven bokproduktion med flera intelligenta agenter som arbetar tillsammans. En prompt, en komplett bok.",
+    "ctaPrimary": "Börja Skriva Din Bok",
+    "ctaSecondary": "Utforska Funktioner",
+    "tagline": "Från idé till publicerad bok på minuter",
+    "features": {
+      "title": "Varför Välja BooksAI?",
+      "subtitle": "Den mest intelligenta bokproduktionsplattformen som någonsin byggts",
+      "aiAgents": {
+        "title": "🤖 Multi-Agent AI-System",
+        "description": "Flera specialiserade AI-agenter samarbetar för att skapa din bok: forskning, planering, skrivande, redigering och korrekturläsning"
+      },
+      "onePrompt": {
+        "title": "⚡ En Prompt, Komplett Bok",
+        "description": "Beskriv bara din bokidé och se våra AI-agenter skapa en fullständig, sammanhängande bok med rätt struktur och flöde"
+      },
+      "personal": {
+        "title": "📖 Skriv Din Berättelse",
+        "description": "Skapa böcker om dig själv, dina drömmar, nära och kära eller vilket ämne som helst. Bli författaren du alltid velat vara"
+      },
+      "community": {
+        "title": "🌟 Dela & Upptäck",
+        "description": "Dela dina skapelser med communityn, läs andras böcker och utbyt recensioner och feedback"
+      },
+      "quality": {
+        "title": "✨ Professionell Kvalitet",
+        "description": "Avancerad AI säkerställer att din bok läses naturligt med korrekt grammatik, struktur och engagerande berättande"
+      },
+      "export": {
+        "title": "📚 Flera Format",
+        "description": "Exportera till PDF, EPUB, Word eller vanlig text. Snart: beställ tryckta böcker och exportera till läsplattor"
+      }
+    },
+    "useCases": {
+      "title": "Vad Kommer Du Att Skriva?",
+      "personal": "📝 Din Självbiografi",
+      "dreams": "💭 Din Drömberättelse",
+      "loved": "❤️ Om Nära och Kära",
+      "fiction": "🎭 Fiktion & Fantasy",
+      "educational": "📚 Utbildningsinnehåll",
+      "business": "💼 Affärsberättelser"
+    },
+    "comingSoon": {
+      "title": "Kommer Snart",
+      "hardcopy": "📦 Tryckta Böcker",
+      "export": "📱 Export till Läsplattor",
+      "advanced": "🔬 Avancerad Genre-specialisering"
+    },
+    "pricing": {
+      "title": "Välj Din Plan",
+      "free": "Utforskare",
+      "starter": "Start",
+      "pro": "Pro",
+      "freemium": "Börja gratis, uppgradera när du är redo",
+      "mostPopular": "Mest Populär",
+      "getStarted": "Kom Igång",
+      "freePrice": "Gratis",
+      "starterPrice": "$9",
+      "proPrice": "$29",
+      "freeFeatures": [
+        "1 bokgenerering",
+        "Upp till 3 000 ord per bok",
+        "Grundläggande AI-agenter",
+        "Endast läsning i appen"
+      ],
+      "starterFeatures": [
+        "5 böcker per månad",
+        "Upp till 15 000 ord per bok",
+        "Avancerade AI-agenter",
+        "PDF & EPUB export",
+        "Dela 1 bok offentligt"
+      ],
+      "proFeatures": [
+        "15 böcker per månad",
+        "Upp till 100 000 ord per bok",
+        "Alla AI-agenter",
+        "Alla exportformat",
+        "Prioriterad generering",
+        "Obegränsad delning",
+        "Kapitelredigering"
+      ],
+      "freeDescription": "Perfekt för att testa BooksAI",
+      "starterDescription": "För hobbyister och vardagsskribenter",
+      "proDescription": "För seriösa författare och skapare"
+    },
+    "stats": {
+      "booksCreated": "Skapade Böcker",
+      "wordsGenerated": "Genererade Ord",
+      "userRating": "Användarrating"
+    },
+    "comingSoonSubtitle": "Vad Kommer Härnäst?",
+    "useCasesSubtitle": "Obegränsade möjligheter för din kreativitet",
+    "finalCta": {
+      "title": "Redo att Skriva Din Första Bok?",
+      "subtitle": "Gå med tusentals författare som redan har förvandlat sina idéer till kompletta böcker med vår AI-drivna plattform.",
+      "disclaimer": "Gratis att börja • Inget kreditkort krävs"
+    }
+  },
+  "settings": {
+    "title": "Inställningar",
+    "subtitle": "Hantera dina kontoinställningar och BooksAI-preferenser.",
+    "profile": {
+      "title": "Profilinställningar",
+      "description": "Uppdatera din personliga information och kontodetaljer",
+      "name": "Visningsnamn",
+      "email": "E-post",
+      "save": "Spara ändringar",
+      "saveSuccess": "Profil uppdaterad framgångsrikt!",
+      "saveError": "Kunde inte uppdatera profil"
+    },
+    "bookDefaults": {
+      "title": "Standardinställningar för böcker",
+      "description": "Ange dina föredragna standardinställningar för nya böcker",
+      "favoriteGenre": "Favoritgenre",
+      "defaultAudience": "Standard målgrupp",
+      "defaultTone": "Standard ton",
+      "defaultEndingType": "Standard sluttyp",
+      "selectGenre": "Välj genre",
+      "selectAudience": "Välj målgrupp",
+      "selectTone": "Välj ton",
+      "selectEndingType": "Välj sluttyp",
+      "saveSuccess": "Bokstandarder uppdaterade framgångsrikt!",
+      "saveError": "Kunde inte uppdatera bokstandarder"
+    },
+    "usage": {
+      "title": "Användningsstatistik",
+      "description": "Visa din aktuella användning och prenumerationsdetaljer",
+      "currentPlan": "Aktuell plan",
+      "booksCreated": "Skapade böcker",
+      "wordsGenerated": "Genererade ord",
+      "viewHistory": "Visa användningshistorik",
+      "upgradePlan": "Uppgradera plan"
+    },
+    "export": {
+      "title": "Export- och lagringsinställningar",
+      "description": "Konfigurera hur dina böcker exporteras och lagras",
+      "format": "Föredraget exportformat",
+      "includeMetadata": "Inkludera metadata i exporter",
+      "autoBackup": "Auto-säkerhetskopiering till molnet",
+      "exportOptions": "Exportalternativ",
+      "save": "Spara inställningar"
+    },
+    "formats": {
+      "pdf": "PDF-dokument",
+      "docx": "Word-dokument",
+      "epub": "EPUB e-bok",
+      "txt": "Vanlig text"
+    },
+    "appearance": {
+      "title": "Utseende",
+      "description": "Välj ditt föredragna tema och visningsinställningar",
+      "theme": "Tema",
+      "light": "Ljus",
+      "dark": "Mörk",
+      "system": "System"
+    }
+  },
+  "dashboard": {
+    "title": "Mina böcker",
+    "welcome": "Välkommen tillbaka",
+    "plan": "Plan",
+    "newBook": "Ny bok",
+    "yourBooks": "Dina böcker",
+    "empty": {
+      "title": "Inga böcker ännu",
+      "description": "Kom igång genom att skapa din första AI-genererade bok. Bara ge en prompt och se magin hända!",
+      "createFirst": "Skapa din första bok"
+    },
+    "status": {
+      "planning": "Planerar",
+      "generating": "Genererar",
+      "complete": "Klar",
+      "draft": "Utkast"
+    },
+    "aiGenerated": "AI-genererad"
+  },
+  "bookDetail": {
+    "backToLibrary": "Tillbaka till biblioteket",
+    "edit": "Redigera",
+    "delete": "Radera",
+    "notFound": "Bok hittades inte",
+    "backToDashboard": "Tillbaka till instrumentpanelen",
+    "startWriting": "Börja skriva bok",
+    "startWritingDescription": "Detta kommer att starta AI-genereringsprocessen",
+    "bookComplete": "Bok klar!",
+    "readBook": "📖 Läs bok",
+    "export": "📤 Exportera",
+    "backCover": "Baksida",
+    "bookDetails": "Bokdetaljer",
+    "genre": "Genre",
+    "targetLength": "Mållängd",
+    "tone": "Ton",
+    "audience": "Målgrupp",
+    "created": "Skapad",
+    "lastUpdated": "Senast uppdaterad",
+    "setupRequired": "⚠️ Inställning krävs",
+    "setupDescription": "Denna bok behöver slutföra inställningsprocessen innan generering kan börja.",
+    "completeSetup": "Slutför inställning",
+    "deleteTitle": "Radera bok",
+    "deleteDescription": "Är du säker på att du vill radera \"{title}\"? Denna åtgärd kan inte ångras.",
+    "cancel": "Avbryt",
+    "deleteBook": "Radera bok",
+    "words": "ord",
+    "title": "Titel",
+    "prompt": "Prompt",
+    "updateBookDetails": "Uppdatera dina bokdetaljer",
+    "bookNotFound": "Bok hittades inte",
+    "failedToLoadBook": "Kunde inte ladda bok",
+    "bookUpdatedSuccessfully": "Bok uppdaterad framgångsrikt!",
+    "failedToUpdateBook": "Kunde inte uppdatera bok",
+    "unexpectedError": "Ett oväntat fel inträffade",
+    "bookDeletedSuccessfully": "Bok raderad framgångsrikt!",
+    "failedToDeleteBook": "Kunde inte radera bok",
+    "generationRequiresSettingsAndBackCover": "Bok behöver inställningar och baksida innan generering kan starta",
+    "bookGenerationStarted": "Bokgenerering startad! 🚀",
+    "failedToStartBookGeneration": "Kunde inte starta bokgenerering",
+    "planning": "Planerar",
+    "writing": "Skriver",
+    "complete": "Klar",
+    "processing": "Bearbetar",
+    "planningDescription": "Sätter upp ditt bokkoncept och struktur",
+    "writingDescription": "AI skriver aktivt dina bokkapitel",
+    "completeDescription": "Din bok är klar och redo att läsas",
+    "generationProgress": "Genereringsframsteg",
+    "chapters": "Kapitel",
+    "chapter": "Kapitel {number}",
+    "sectionsComplete": "sektioner klara",
+    "done": "Klar",
+    "planned": "Planerad",
+    "progress": {
+      "progress": "Framsteg",
+      "planning": "Planerar din bokstruktur och disposition...",
+      "research": "Genomför forskning och samlar information...",
+      "outline": "Skapar detaljerad bokdisposition...",
+      "structure": "Organiserar kapitel och struktur...",
+      "chapters": "Skriver kapitel ({completed}/{total} klara)...",
+      "proofreading": "Tillämpar slutlig korrekturläsning och polering...",
+      "complete": "Bokgenerering klar!",
+      "processing": "Bearbetar...",
+      "updateFrequency": "Uppdateringar var några sekunder • Denna process kan ta 10-30 minuter",
+      "redisUnavailable": "⚠️ Använder cachad framsteg (Redis tillfälligt otillgänglig)",
+      "lastUpdated": "Senast uppdaterad: {time}"
+    }
+  },
+  "bookCreate": {
+    "title": "Skapa ny bok",
+    "stepDescription": "Steg {current} av {total}: {description}",
+    "back": "Tillbaka",
+    "steps": {
+      "concept": {
+        "title": "Bokkoncept",
+        "description": "Titel och berättelseidé"
+      },
+      "settings": {
+        "title": "Bokinställningar", 
+        "description": "Genre, ton och preferenser"
+      },
+      "backCover": {
+        "title": "Baksida",
+        "description": "AI-genererad bokbeskrivning"
+      },
+      "review": {
+        "title": "Slutgranskning",
+        "description": "Godkänn och börja skriva"
+      }
+    },
+    "form": {
+      "title": "Boktitel",
+      "titlePlaceholder": "Ange en övertygande titel för din bok",
+      "concept": "Bokkoncept och berättelseidé",
+      "conceptPlaceholder": "Beskriv din bokidé i detalj. Inkludera genre, huvudkaraktärer, handlingsförlopp, miljö och eventuella specifika krav. Ju mer specifik du är, desto bättre kommer din bok att bli!",
+      "generateTemplate": "✨ Generera mall",
+      "templateSuccess": "Mall genererad! Fyll i sektionerna med dina berättelsedetaljer.",
+      "settingsInfo": "Inställningskonfiguration",
+      "settingsDescription": "Fokusera på ditt berättelsekoncept här. Du kommer att konfigurera genre, målgrupp, ton, språk och andra inställningar i nästa steg.",
+      "templateHelp": "Var så detaljerad som möjligt - detta kommer att vägleda AI:n i att skapa din bok.",
+      "useTemplate": "Använd vår mall för bästa resultat.",
+      "required": "Obligatoriskt fält"
+    },
+    "settings": {
+      "genre": "Genre",
+      "genrePlaceholder": "Välj en genre",
+      "targetAudience": "Målgrupp",
+      "audiencePlaceholder": "Välj målgrupp",
+      "tone": "Ton och stil",
+      "tonePlaceholder": "Välj ton",
+      "endingType": "Sluttyp",
+      "endingPlaceholder": "Välj sluttyp",
+      "language": "Språk",
+      "languagePlaceholder": "Välj språk",
+      "wordCount": "Målordantal",
+      "wordCountHelp": "Dra för att ställa in ditt målordantal",
+      "wordCountExamples": {
+        "shortStory": "Exempel: \"The Gift of the Magi\", \"The Lottery\"",
+        "novella": "Exempel: \"Of Mice and Men\", \"The Great Gatsby\"",
+        "novel": "Exempel: \"The Catcher in the Rye\", \"To Kill a Mockingbird\"",
+        "epic": "Exempel: \"Dune\", \"The Lord of the Rings\", \"The Stand\""
+      },
+      "categories": {
+        "shortStory": "Novell",
+        "novella": "Kort roman",
+        "novel": "Roman",
+        "epic": "Epos"
+      }
+    },
+    "review": {
+      "title": "Redo att skriva din bok!",
+      "description": "Ditt bokkoncept och inställningar är klara. Klicka nedan för att starta AI-genereringsprocessen.",
+      "summary": "📋 Boksammanfattning",
+      "summaryFields": {
+        "title": "Titel:",
+        "genre": "Genre:",
+        "audience": "Målgrupp:",
+        "language": "Språk:",
+        "length": "Längd:",
+        "tone": "Ton:"
+      },
+      "startGeneration": "🚀 Skriv min bok",
+      "startDescription": "Detta kommer att starta AI-genereringsprocessen. Du kan övervaka framsteg på nästa sida."
+    },
+    "navigation": {
+      "continue": "Fortsätt",
+      "previous": "Föregående",
+      "generateBackCover": "Generera baksida",
+      "regenerate": "Återgenerera",
+      "generating": "Genererar...",
+      "backCoverGenerated": "Baksida genererad framgångsrikt!",
+      "backCoverError": "Kunde inte generera baksida"
+    }
+  },
+  "bookReader": {
+    "notFound": "Bok hittades inte",
+    "backToDashboard": "Tillbaka till instrumentpanelen",
+    "backToBook": "Tillbaka till bok",
+    "previousChapter": "Föregående kapitel",
+    "nextChapter": "Nästa kapitel",
+    "chapterProgress": "Kapitel",
+    "chapterNotFound": "Kapitel hittades inte",
+    "noContent": "Denna bok har inget läsbart innehåll ännu.",
+    "loadError": "Kunde inte ladda bokinnehåll"
+  },
+  "common": {
+    "loading": "Laddar...",
+    "error": "Fel",
+    "success": "Framgång",
+    "cancel": "Avbryt",
+    "save": "Spara",
+    "saveChanges": "Spara ändringar",
+    "delete": "Radera",
+    "edit": "Redigera",
+    "close": "Stäng",
+    "continue": "Fortsätt",
+    "back": "Tillbaka",
+    "next": "Nästa",
+    "previous": "Föregående",
+    "language": "Språk",
+    "required": "Obligatorisk",
+    "optional": "Valfri"
+  },
+  "genres": {
+    "fantasy": "Fantasy",
+    "scienceFiction": "Science Fiction", 
+    "romance": "Romantik",
+    "mystery": "Mysterium",
+    "thriller": "Thriller",
+    "historicalFiction": "Historisk skönlitteratur",
+    "contemporaryFiction": "Samtida skönlitteratur",
+    "youngAdult": "Ungdomsbok",
+    "horror": "Skräck",
+    "adventure": "Äventyr",
+    "drama": "Drama",
+    "comedy": "Komedi",
+    "literaryFiction": "Litterär skönlitteratur"
+  },
+  "audiences": {
+    "children": "Barn (5-12 år)",
+    "youngAdult": "Ungdomar (13-17 år)",
+    "newAdult": "Nya vuxna (18-25 år)",
+    "adult": "Vuxna (25+ år)",
+    "allAges": "Alla åldrar"
+  },
+  "tones": {
+    "lightHearted": "Lättsam och rolig",
+    "darkSerious": "Mörk och allvarlig",
+    "epicGrand": "Episk och storslaging",
+    "romantic": "Romantisk och känslofull",
+    "mysterious": "Mystisk och spännande",
+    "humorous": "Humoristisk och kvick",
+    "dramatic": "Dramatisk och intensiv",
+    "inspiring": "Inspirerande och upplyftande",
+    "gritty": "Grittig och realistisk"
+  },
+  "endings": {
+    "happy": "Lyckligt slut",
+    "bittersweet": "Bitterljuvt",
+    "tragic": "Tragiskt",
+    "ambiguous": "Öppet/Tvetydigt",
+    "twist": "Vändningsslut",
+    "cliffhanger": "Cliffhanger",
+    "satisfying": "Tillfredsställande upplösning"
+  },
+  "placeholders": {
+    "enterName": "Ange ditt visningsnamn",
+    "enterEmail": "Ange din e-post"
+  },
+  "errors": {
+    "general": "Något gick fel. Försök igen.",
+    "networkError": "Nätverksfel. Kontrollera din anslutning.",
+    "unauthorized": "Du är inte behörig att utföra denna åtgärd.",
+    "notFound": "Den begärda resursen hittades inte.",
+    "validation": "Kontrollera din inmatning och försök igen."
+  }
+} 

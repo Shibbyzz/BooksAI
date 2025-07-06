@@ -1,0 +1,420 @@
+{
+  "navigation": {
+    "myBooks": "My Books",
+    "settings": "Settings"
+  },
+  "hero": {
+    "title": "Transform Your Ideas Into",
+    "titleHighlight": "Complete Books",
+    "subtitle": "Revolutionary AI-powered book creation with multiple intelligent agents working together. One prompt, one complete book.",
+    "ctaPrimary": "Start Writing Your Book",
+    "ctaSecondary": "Explore Features",
+    "tagline": "From idea to published book in minutes",
+    "features": {
+      "title": "Why Choose BooksAI?",
+      "subtitle": "The most intelligent book creation platform ever built",
+      "aiAgents": {
+        "title": "🤖 Multi-Agent AI System",
+        "description": "Multiple specialized AI agents collaborate to create your book: research, planning, writing, editing, and proofreading agents"
+      },
+      "onePrompt": {
+        "title": "⚡ One Prompt, Complete Book",
+        "description": "Simply describe your book idea and watch our AI agents create a full, coherent book with proper structure and flow"
+      },
+      "personal": {
+        "title": "📖 Write Your Story",
+        "description": "Create books about yourself, your dreams, loved ones, or any topic. Become the author you've always wanted to be"
+      },
+      "community": {
+        "title": "🌟 Share & Discover",
+        "description": "Share your creations with the community, read others' books, and exchange reviews and feedback"
+      },
+      "quality": {
+        "title": "✨ Professional Quality",
+        "description": "Advanced AI ensures your book reads naturally with proper grammar, structure, and engaging storytelling"
+      },
+      "export": {
+        "title": "📚 Multiple Formats",
+        "description": "Export to PDF, EPUB, Word, or plain text. Soon: order hardcopy prints and export to reading tablets"
+      }
+    },
+    "useCases": {
+      "title": "What Will You Write?",
+      "personal": "📝 Your Autobiography",
+      "dreams": "💭 Your Dream Story",
+      "loved": "❤️ About Loved Ones",
+      "fiction": "🎭 Fiction & Fantasy",
+      "educational": "📚 Educational Content",
+      "business": "💼 Business Stories"
+    },
+    "comingSoon": {
+      "title": "Coming Soon",
+      "hardcopy": "📦 Hardcopy Book Printing",
+      "export": "📱 Export to Reading Tablets",
+      "advanced": "🔬 Advanced Genre Specialization"
+    },
+    "pricing": {
+      "title": "Choose Your Plan",
+      "free": "Explorer",
+      "starter": "Starter", 
+      "pro": "Pro",
+      "freemium": "Start for free, upgrade when ready",
+      "mostPopular": "Most Popular",
+      "getStarted": "Get Started",
+      "freePrice": "Free",
+      "starterPrice": "$9",
+      "proPrice": "$29",
+      "freeFeatures": [
+        "1 book generation",
+        "Up to 3,000 words per book",
+        "Basic AI agents",
+        "Read in-app only"
+      ],
+      "starterFeatures": [
+        "5 books per month",
+        "Up to 15,000 words per book",
+        "Advanced AI agents",
+        "PDF & EPUB export",
+        "Share 1 book publicly"
+      ],
+      "proFeatures": [
+        "15 books per month",
+        "Up to 100,000 words per book",
+        "All AI agents",
+        "All export formats",
+        "Priority generation",
+        "Unlimited sharing",
+        "Chapter editing"
+      ],
+      "freeDescription": "Perfect for trying out BooksAI",
+      "starterDescription": "For hobbyists and casual writers",
+      "proDescription": "For serious authors and creators"
+    },
+    "stats": {
+      "booksCreated": "Books Created",
+      "wordsGenerated": "Words Generated",
+      "userRating": "User Rating"
+    },
+    "comingSoonSubtitle": "What's Next?",
+    "useCasesSubtitle": "Unlimited possibilities for your creativity",
+    "finalCta": {
+      "title": "Ready to Write Your First Book?",
+      "subtitle": "Join thousands of authors who have already transformed their ideas into complete books with our AI-powered platform.",
+      "disclaimer": "Free to start • No credit card required"
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "subtitle": "Manage your account settings and BooksAI preferences.",
+    "profile": {
+      "title": "Profile Settings",
+      "description": "Update your personal information and account details",
+      "name": "Display Name",
+      "email": "Email",
+      "save": "Save Changes",
+      "saveSuccess": "Profile updated successfully!",
+      "saveError": "Failed to update profile"
+    },
+    "bookDefaults": {
+      "title": "Book Creation Defaults",
+      "description": "Set your preferred defaults for new books",
+      "favoriteGenre": "Favorite Genre",
+      "defaultAudience": "Default Target Audience",
+      "defaultTone": "Default Tone",
+      "defaultEndingType": "Default Ending Type",
+      "selectGenre": "Select genre",
+      "selectAudience": "Select audience",
+      "selectTone": "Select tone",
+      "selectEndingType": "Select ending type",
+      "saveSuccess": "Book defaults updated successfully!",
+      "saveError": "Failed to update book defaults"
+    },
+    "usage": {
+      "title": "Usage Statistics",
+      "description": "View your current usage and subscription details",
+      "currentPlan": "Current Plan",
+      "booksCreated": "Books Created",
+      "wordsGenerated": "Words Generated",
+      "viewHistory": "View Usage History",
+      "upgradePlan": "Upgrade Plan"
+    },
+    "export": {
+      "title": "Export & Storage Settings",
+      "description": "Configure how your books are exported and stored",
+      "format": "Preferred Export Format",
+      "includeMetadata": "Include metadata in exports",
+      "autoBackup": "Auto-backup to cloud",
+      "exportOptions": "Export Options",
+      "save": "Save Settings"
+    },
+    "formats": {
+      "pdf": "PDF Document",
+      "docx": "Word Document",
+      "epub": "EPUB eBook",
+      "txt": "Plain Text"
+    },
+    "appearance": {
+      "title": "Appearance",
+      "description": "Choose your preferred theme and display settings",
+      "theme": "Theme",
+      "light": "Light",
+      "dark": "Dark",
+      "system": "System"
+    }
+  },
+  "dashboard": {
+    "title": "My Books",
+    "welcome": "Welcome back",
+    "plan": "Plan",
+    "newBook": "New Book",
+    "yourBooks": "Your Books",
+    "empty": {
+      "title": "No books yet",
+      "description": "Get started by creating your first AI-generated book. Just provide a prompt and watch the magic happen!",
+      "createFirst": "Create Your First Book"
+    },
+    "status": {
+      "planning": "Planning",
+      "generating": "Generating",
+      "complete": "Complete",
+      "draft": "Draft"
+    },
+    "aiGenerated": "AI Generated"
+  },
+  "bookDetail": {
+    "backToLibrary": "Back to Library",
+    "edit": "Edit",
+    "delete": "Delete",
+    "notFound": "Book not found",
+    "backToDashboard": "Back to Dashboard",
+    "startWriting": "Start Writing Book",
+    "startWritingDescription": "This will begin the AI generation process",
+    "bookComplete": "Book Complete!",
+    "readBook": "📖 Read Book",
+    "export": "📤 Export",
+    "backCover": "Back Cover",
+    "bookDetails": "Book Details",
+    "genre": "Genre",
+    "targetLength": "Target Length",
+    "tone": "Tone",
+    "audience": "Audience",
+    "created": "Created",
+    "lastUpdated": "Last Updated",
+    "setupRequired": "⚠️ Setup Required",
+    "setupDescription": "This book needs to complete the setup process before generation can begin.",
+    "completeSetup": "Complete Setup",
+    "deleteTitle": "Delete Book",
+    "deleteDescription": "Are you sure you want to delete \"{title}\"? This action cannot be undone.",
+    "cancel": "Cancel",
+    "deleteBook": "Delete Book",
+    "words": "words",
+    "title": "Title",
+    "prompt": "Prompt",
+    "updateBookDetails": "Update your book details",
+    "bookNotFound": "Book not found",
+    "failedToLoadBook": "Failed to load book",
+    "bookUpdatedSuccessfully": "Book updated successfully!",
+    "failedToUpdateBook": "Failed to update book",
+    "unexpectedError": "An unexpected error occurred",
+    "bookDeletedSuccessfully": "Book deleted successfully!",
+    "failedToDeleteBook": "Failed to delete book",
+    "generationRequiresSettingsAndBackCover": "Book needs settings and back cover before generation can start",
+    "bookGenerationStarted": "Book generation started! 🚀",
+    "failedToStartBookGeneration": "Failed to start book generation",
+    "planning": "Planning",
+    "writing": "Writing",
+    "complete": "Complete",
+    "processing": "Processing",
+    "planningDescription": "Setting up your book concept and structure",
+    "writingDescription": "AI is actively writing your book chapters",
+    "completeDescription": "Your book is finished and ready to read",
+    "generationProgress": "Generation Progress",
+    "chapters": "Chapters",
+    "chapter": "Chapter {number}",
+    "sectionsComplete": "sections complete",
+    "done": "Done",
+    "planned": "Planned",
+    "progress": {
+      "progress": "Progress",
+      "planning": "Planning your book structure and outline...",
+      "research": "Conducting research and gathering information...",
+      "outline": "Creating detailed book outline...",
+      "structure": "Organizing chapters and structure...",
+      "chapters": "Writing chapters ({completed}/{total} complete)...",
+      "proofreading": "Applying final proofreading and polish...",
+      "complete": "Book generation complete!",
+      "processing": "Processing...",
+      "updateFrequency": "Updates every few seconds • This process may take 10-30 minutes",
+      "redisUnavailable": "⚠️ Using cached progress (Redis temporarily unavailable)",
+      "lastUpdated": "Last updated: {time}"
+    }
+  },
+  "bookCreate": {
+    "title": "Create New Book",
+    "stepDescription": "Step {current} of {total}: {description}",
+    "back": "Back",
+    "steps": {
+      "concept": {
+        "title": "Book Concept",
+        "description": "Title and story idea"
+      },
+      "settings": {
+        "title": "Book Settings", 
+        "description": "Genre, tone, and preferences"
+      },
+      "backCover": {
+        "title": "Back Cover",
+        "description": "AI-generated book description"
+      },
+      "review": {
+        "title": "Final Review",
+        "description": "Approve and start writing"
+      }
+    },
+    "form": {
+      "title": "Book Title",
+      "titlePlaceholder": "Enter a compelling title for your book",
+      "concept": "Book Concept & Story Idea",
+      "conceptPlaceholder": "Describe your book idea in detail. Include genre, main characters, plot points, setting, and any specific requirements. The more specific you are, the better your book will be!",
+      "generateTemplate": "✨ Generate Template",
+      "templateSuccess": "Template generated! Fill in the sections with your story details.",
+      "settingsInfo": "Settings Configuration",
+      "settingsDescription": "Focus on your story concept here. You'll configure genre, target audience, tone, language, and other settings in the next step.",
+      "templateHelp": "Be as detailed as possible - this will guide the AI in creating your book.",
+      "useTemplate": "Use our template for best results.",
+      "required": "Required field"
+    },
+    "settings": {
+      "genre": "Genre",
+      "genrePlaceholder": "Select a genre",
+      "targetAudience": "Target Audience",
+      "audiencePlaceholder": "Select target audience",
+      "tone": "Tone & Style",
+      "tonePlaceholder": "Select tone",
+      "endingType": "Ending Type",
+      "endingPlaceholder": "Select ending type",
+      "language": "Language",
+      "languagePlaceholder": "Select language",
+      "wordCount": "Target Word Count",
+      "wordCountHelp": "Drag to set your target word count",
+      "wordCountExamples": {
+        "shortStory": "Examples: \"The Gift of the Magi\", \"The Lottery\"",
+        "novella": "Examples: \"Of Mice and Men\", \"The Great Gatsby\"",
+        "novel": "Examples: \"The Catcher in the Rye\", \"To Kill a Mockingbird\"",
+        "epic": "Examples: \"Dune\", \"The Lord of the Rings\", \"The Stand\""
+      },
+      "categories": {
+        "shortStory": "Short Story",
+        "novella": "Novella",
+        "novel": "Novel",
+        "epic": "Epic Novel"
+      }
+    },
+    "review": {
+      "title": "Ready to Write Your Book!",
+      "description": "Your book concept and settings are complete. Click below to start the AI generation process.",
+      "summary": "📋 Book Summary",
+      "summaryFields": {
+        "title": "Title:",
+        "genre": "Genre:",
+        "audience": "Audience:",
+        "language": "Language:",
+        "length": "Length:",
+        "tone": "Tone:"
+      },
+      "startGeneration": "🚀 Write My Book",
+      "startDescription": "This will start the AI generation process. You can monitor progress on the next page."
+    },
+    "navigation": {
+      "continue": "Continue",
+      "previous": "Previous",
+      "generateBackCover": "Generate Back Cover",
+      "regenerate": "Regenerate",
+      "generating": "Generating...",
+      "backCoverGenerated": "Back cover generated successfully!",
+      "backCoverError": "Failed to generate back cover"
+    }
+  },
+  "bookReader": {
+    "notFound": "Book not found",
+    "backToDashboard": "Back to Dashboard",
+    "backToBook": "Back to Book",
+    "previousChapter": "Previous Chapter",
+    "nextChapter": "Next Chapter",
+    "chapterProgress": "Chapter",
+    "chapterNotFound": "Chapter not found",
+    "noContent": "This book has no readable content yet.",
+    "loadError": "Failed to load book content"
+  },
+  "common": {
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saveChanges": "Save Changes",
+    "delete": "Delete",
+    "edit": "Edit",
+    "close": "Close",
+    "continue": "Continue",
+    "back": "Back",
+    "next": "Next",
+    "previous": "Previous",
+    "language": "Language",
+    "required": "Required",
+    "optional": "Optional"
+  },
+  "genres": {
+    "fantasy": "Fantasy",
+    "scienceFiction": "Science Fiction", 
+    "romance": "Romance",
+    "mystery": "Mystery",
+    "thriller": "Thriller",
+    "historicalFiction": "Historical Fiction",
+    "contemporaryFiction": "Contemporary Fiction",
+    "youngAdult": "Young Adult",
+    "horror": "Horror",
+    "adventure": "Adventure",
+    "drama": "Drama",
+    "comedy": "Comedy",
+    "literaryFiction": "Literary Fiction"
+  },
+  "audiences": {
+    "children": "Children (Ages 5-12)",
+    "youngAdult": "Young Adult (Ages 13-17)",
+    "newAdult": "New Adult (Ages 18-25)",
+    "adult": "Adult (Ages 25+)",
+    "allAges": "All Ages"
+  },
+  "tones": {
+    "lightHearted": "Light-hearted & Fun",
+    "darkSerious": "Dark & Serious",
+    "epicGrand": "Epic & Grand",
+    "romantic": "Romantic & Emotional",
+    "mysterious": "Mysterious & Suspenseful",
+    "humorous": "Humorous & Witty",
+    "dramatic": "Dramatic & Intense",
+    "inspiring": "Inspiring & Uplifting",
+    "gritty": "Gritty & Realistic"
+  },
+  "endings": {
+    "happy": "Happy Ending",
+    "bittersweet": "Bittersweet",
+    "tragic": "Tragic",
+    "ambiguous": "Open/Ambiguous",
+    "twist": "Twist Ending",
+    "cliffhanger": "Cliffhanger",
+    "satisfying": "Satisfying Resolution"
+  },
+  "placeholders": {
+    "enterName": "Enter your display name",
+    "enterEmail": "Enter your email"
+  },
+  "errors": {
+    "general": "Something went wrong. Please try again.",
+    "networkError": "Network error. Please check your connection.",
+    "unauthorized": "You are not authorized to perform this action.",
+    "notFound": "The requested resource was not found.",
+    "validation": "Please check your input and try again."
+  }
+} 

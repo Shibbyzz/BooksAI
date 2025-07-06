@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeftIcon, ArrowRightIcon, CheckIcon } from '@heroicons/react/24/outline'
+import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, ChevronDownIcon } from '@heroicons/react/24/outline'
 import { toast } from 'react-hot-toast'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
@@ -33,6 +33,8 @@ interface BookCreationForm {
   // Step 3: Generated Content
   backCover?: string
 }
+
+
 
 interface WizardStep {
   id: number
@@ -69,6 +71,113 @@ const ENDING_OPTIONS = [
   'Twist Ending', 'Cliffhanger', 'Satisfying Resolution'
 ]
 
+const LANGUAGE_OPTIONS = [
+  { code: 'en', name: 'English' },
+  { code: 'es', name: 'Spanish' },
+  { code: 'fr', name: 'French' },
+  { code: 'de', name: 'German' },
+  { code: 'it', name: 'Italian' },
+  { code: 'pt', name: 'Portuguese' },
+  { code: 'ru', name: 'Russian' },
+  { code: 'zh', name: 'Chinese (Simplified)' },
+  { code: 'ja', name: 'Japanese' },
+  { code: 'ko', name: 'Korean' },
+  { code: 'ar', name: 'Arabic' },
+  { code: 'hi', name: 'Hindi' },
+  { code: 'nl', name: 'Dutch' },
+  { code: 'sv', name: 'Swedish' },
+  { code: 'da', name: 'Danish' },
+  { code: 'no', name: 'Norwegian' },
+  { code: 'fi', name: 'Finnish' },
+  { code: 'pl', name: 'Polish' },
+  { code: 'tr', name: 'Turkish' },
+  { code: 'he', name: 'Hebrew' }
+]
+
+// Custom Dropdown Component
+interface CustomDropdownProps {
+  label: string
+  value: string
+  options: string[]
+  onChange: (value: string) => void
+  placeholder: string
+  required?: boolean
+}
+
+const CustomDropdown: React.FC<CustomDropdownProps> = ({ 
+  label, 
+  value, 
+  options, 
+  onChange, 
+  placeholder, 
+  required = false 
+}) => {
+  const [isOpen, setIsOpen] = useState(false)
+
+  return (
+    <div className="relative">
+      <label className="block text-sm font-medium mb-2">
+        {label} {required && <span className="text-red-500">*</span>}
+      </label>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          className={`w-full px-3 py-2 text-left border rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-colors ${
+            value ? 'bg-background border-input' : 'bg-muted border-muted text-muted-foreground'
+          }`}
+        >
+          <span className="block truncate">
+            {value || placeholder}
+          </span>
+          <span className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+            <ChevronDownIcon className={`h-4 w-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+          </span>
+        </button>
+
+        {isOpen && (
+          <div className="absolute z-10 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+            <div className="py-1">
+              {options.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => {
+                    onChange(option)
+                    setIsOpen(false)
+                  }}
+                  className={`w-full text-left px-3 py-2 hover:bg-gray-100 transition-colors ${
+                    value === option ? 'bg-primary text-primary-foreground' : 'text-gray-900'
+                  }`}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Word count helper functions
+const getWordCountCategory = (wordCount: number): string => {
+  if (wordCount < 12500) return 'Short Story'
+  if (wordCount < 40000) return 'Novella'
+  if (wordCount < 80000) return 'Novel'
+  return 'Epic Novel'
+}
+
+const getWordCountExamples = (wordCount: number): string => {
+  if (wordCount < 12500) return 'Examples: "The Gift of the Magi", "The Lottery"'
+  if (wordCount < 40000) return 'Examples: "Of Mice and Men", "The Great Gatsby"'
+  if (wordCount < 80000) return 'Examples: "The Catcher in the Rye", "To Kill a Mockingbird"'
+  return 'Examples: "Dune", "The Lord of the Rings", "The Stand"'
+}
+
+
+
 export default function CreateBookPage() {
   const [currentStep, setCurrentStep] = useState(1)
   const [loading, setLoading] = useState(false)
@@ -78,7 +187,7 @@ export default function CreateBookPage() {
     genre: '',
     targetAudience: '',
     tone: '',
-    wordCount: 50000,
+    wordCount: 60000, // Default to middle of novel range
     endingType: '',
     language: 'en',
     structure: 'three-act',
@@ -135,7 +244,7 @@ export default function CreateBookPage() {
       case 1:
         return form.title.trim() && form.prompt.trim()
       case 2:
-        return form.genre && form.targetAudience && form.tone && form.endingType
+        return form.genre && form.targetAudience && form.tone && form.endingType && form.language
       case 3:
         return form.backCover
       default:
@@ -159,6 +268,8 @@ export default function CreateBookPage() {
 
     setCurrentStep(prev => prev + 1)
   }
+
+
 
   const handleBack = () => {
     setCurrentStep(prev => prev - 1)
@@ -307,6 +418,68 @@ export default function CreateBookPage() {
     }
   }
 
+  const generateTemplate = () => {
+    const template = `**🎯 BASIC STORY CONCEPT**
+Main Theme: [What is your book really about? Love, redemption, survival, etc.]
+Story Hook: [What makes this story unique and compelling?]
+Core Conflict: [What is the main problem or challenge driving your story?]
+
+**👥 MAIN CHARACTERS**
+Protagonist: 
+- Name: [Character name]
+- Role: [Hero, antihero, etc.]
+- Background: [Profession, age, key traits]
+- Motivation: [What drives them?]
+- Character Arc: [How do they change?]
+
+Antagonist:
+- Name: [Character name]
+- Role: [Villain, opposing force, etc.]
+- Background: [Their history and motivations]
+- Conflict: [Why do they oppose the protagonist?]
+
+Supporting Characters:
+- [Name and brief role of 2-3 key supporting characters]
+
+**🌍 SETTING & WORLD-BUILDING**
+Time Period: [Modern day, historical, futuristic, etc.]
+Location: [Where does the story take place?]
+World Rules: [Are there magic systems, technology, social rules we need to know?]
+Atmosphere: [Dark and gritty, light and hopeful, mysterious, etc.]
+
+**📖 PLOT STRUCTURE**
+Opening: [How does the story begin? What's the inciting incident?]
+Rising Action: [What obstacles and challenges does the protagonist face?]
+Climax: [What's the major confrontation or turning point?]
+Resolution: [How does the story end? What's resolved?]
+
+**🎭 EMOTIONAL BEATS & THEMES**
+Key Themes: [What deeper messages or questions does your story explore?]
+Emotional Journey: [What emotional arc do you want readers to experience?]
+
+**🔬 RESEARCH & TECHNICAL ELEMENTS**
+Specialized Knowledge: [Any professions, sciences, historical periods, or technical subjects?]
+Cultural Context: [Any specific cultures, time periods, or social settings?]
+Technical Aspects: [Technology, magic systems, specialized skills, etc.]
+
+**✨ STYLE & PREFERENCES**
+Writing Style: [First person, third person, multiple POVs, etc.]
+Pacing: [Fast-paced thriller, slow-burn character study, etc.]
+Inspiration: [Any books, movies, or stories that inspire your vision?]
+Special Requests: [Anything else specific you want included?]
+
+**💡 ADDITIONAL NOTES**
+[Any other details, preferences, or specific scenes you want included]
+
+---
+*Fill in as much detail as possible - the more specific you are, the better your AI-generated book will be!*`
+    
+    setForm(prev => ({ ...prev, prompt: template }))
+    toast.success('Template generated! Fill in the sections with your story details.')
+  }
+
+
+
   const renderStepContent = () => {
     switch (currentStep) {
       case 1:
@@ -321,9 +494,20 @@ export default function CreateBookPage() {
             />
 
             <div>
-              <label className="block text-sm font-medium mb-2">
-                Book Concept & Story Idea
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium">
+                  Book Concept & Story Idea
+                </label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={generateTemplate}
+                  className="text-xs"
+                >
+                  ✨ Generate Template
+                </Button>
+              </div>
               <textarea
                 value={form.prompt}
                 onChange={(e) => handleInputChange('prompt', e.target.value)}
@@ -331,8 +515,33 @@ export default function CreateBookPage() {
                 className="w-full min-h-[200px] px-3 py-2 border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent resize-vertical"
                 required
               />
+              
+              {/* Settings Info Box */}
+              <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-xs font-bold">ℹ</span>
+                    </div>
+                  </div>
+                  <div className="ml-3">
+                    <h4 className="text-sm font-medium text-blue-900">Settings Configuration</h4>
+                    <p className="text-sm text-blue-700 mt-1">
+                      Focus on your story concept here. You'll configure <strong>genre, target audience, tone, language, and other settings</strong> in the next step.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
               <p className="text-xs text-muted-foreground mt-1">
-                Be as detailed as possible - this will guide the AI in creating your book
+                Be as detailed as possible - this will guide the AI in creating your book. 
+                <button 
+                  type="button"
+                  onClick={generateTemplate}
+                  className="text-primary hover:underline ml-1"
+                >
+                  Use our template for best results.
+                </button>
               </p>
             </div>
           </div>
@@ -341,86 +550,105 @@ export default function CreateBookPage() {
       case 2:
         return (
           <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Genre *</label>
-                <select
-                  value={form.genre}
-                  onChange={(e) => handleInputChange('genre', e.target.value)}
-                  className="w-full px-3 py-2 border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
-                  required
-                >
-                  <option value="">Select a genre</option>
-                  {GENRE_OPTIONS.map(genre => (
-                    <option key={genre} value={genre}>{genre}</option>
-                  ))}
-                </select>
-              </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <CustomDropdown
+                label="Genre"
+                value={form.genre}
+                options={GENRE_OPTIONS}
+                onChange={(value) => handleInputChange('genre', value)}
+                placeholder="Select a genre"
+                required
+              />
 
-              <div>
-                <label className="block text-sm font-medium mb-2">Target Audience *</label>
-                <select
-                  value={form.targetAudience}
-                  onChange={(e) => handleInputChange('targetAudience', e.target.value)}
-                  className="w-full px-3 py-2 border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
-                  required
-                >
-                  <option value="">Select target audience</option>
-                  {AUDIENCE_OPTIONS.map(audience => (
-                    <option key={audience} value={audience}>{audience}</option>
-                  ))}
-                </select>
-              </div>
+              <CustomDropdown
+                label="Target Audience"
+                value={form.targetAudience}
+                options={AUDIENCE_OPTIONS}
+                onChange={(value) => handleInputChange('targetAudience', value)}
+                placeholder="Select target audience"
+                required
+              />
 
-              <div>
-                <label className="block text-sm font-medium mb-2">Tone & Style *</label>
-                <select
-                  value={form.tone}
-                  onChange={(e) => handleInputChange('tone', e.target.value)}
-                  className="w-full px-3 py-2 border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
-                  required
-                >
-                  <option value="">Select tone</option>
-                  {TONE_OPTIONS.map(tone => (
-                    <option key={tone} value={tone}>{tone}</option>
-                  ))}
-                </select>
-              </div>
+              <CustomDropdown
+                label="Tone & Style"
+                value={form.tone}
+                options={TONE_OPTIONS}
+                onChange={(value) => handleInputChange('tone', value)}
+                placeholder="Select tone"
+                required
+              />
 
-              <div>
-                <label className="block text-sm font-medium mb-2">Ending Type *</label>
-                <select
-                  value={form.endingType}
-                  onChange={(e) => handleInputChange('endingType', e.target.value)}
-                  className="w-full px-3 py-2 border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
-                  required
-                >
-                  <option value="">Select ending type</option>
-                  {ENDING_OPTIONS.map(ending => (
-                    <option key={ending} value={ending}>{ending}</option>
-                  ))}
-                </select>
-              </div>
+              <CustomDropdown
+                label="Ending Type"
+                value={form.endingType}
+                options={ENDING_OPTIONS}
+                onChange={(value) => handleInputChange('endingType', value)}
+                placeholder="Select ending type"
+                required
+              />
+
+              <CustomDropdown
+                label="Language"
+                value={LANGUAGE_OPTIONS.find(lang => lang.code === form.language)?.name || 'English'}
+                options={LANGUAGE_OPTIONS.map(lang => lang.name)}
+                onChange={(value) => handleInputChange('language', LANGUAGE_OPTIONS.find(lang => lang.name === value)?.code || 'en')}
+                placeholder="Select language"
+                required
+              />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Target Word Count: {form.wordCount.toLocaleString()} words
-              </label>
-              <input
-                type="range"
-                min="10000"
-                max="200000"
-                step="5000"
-                value={form.wordCount}
-                onChange={(e) => handleInputChange('wordCount', parseInt(e.target.value))}
-                className="w-full"
-              />
-              <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                <span>Short (10K)</span>
-                <span>Novella (50K)</span>
-                <span>Novel (100K)</span>
-                <span>Epic (200K)</span>
+            <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-6 rounded-lg border border-blue-200">
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-2">
+                  Target Word Count: {form.wordCount.toLocaleString()} words
+                </label>
+                <div className="text-lg font-semibold text-blue-700 mb-1">
+                  {getWordCountCategory(form.wordCount)}
+                </div>
+                <div className="text-sm text-gray-600 mb-4">
+                  {getWordCountExamples(form.wordCount)}
+                </div>
+              </div>
+              
+              <div className="relative">
+                <input
+                  type="range"
+                  min="1000"
+                  max="120000"
+                  step="1000"
+                  value={form.wordCount}
+                  onChange={(e) => handleInputChange('wordCount', parseInt(e.target.value))}
+                  className="w-full h-2 bg-gradient-to-r from-green-200 via-blue-200 to-purple-200 rounded-lg appearance-none cursor-pointer slider"
+                  style={{
+                    background: `linear-gradient(to right, 
+                      #10B981 0%, 
+                      #10B981 ${((12500 - 1000) / (120000 - 1000)) * 100}%, 
+                      #3B82F6 ${((12500 - 1000) / (120000 - 1000)) * 100}%, 
+                      #3B82F6 ${((40000 - 1000) / (120000 - 1000)) * 100}%, 
+                      #F59E0B ${((40000 - 1000) / (120000 - 1000)) * 100}%, 
+                      #F59E0B ${((80000 - 1000) / (120000 - 1000)) * 100}%, 
+                      #EF4444 ${((80000 - 1000) / (120000 - 1000)) * 100}%, 
+                      #EF4444 100%)`
+                  }}
+                />
+                <div className="relative mt-2 text-xs text-gray-500">
+                  {/* Position labels to align with color sections */}
+                  <div className="absolute" style={{ left: `${((6750 - 1000) / (120000 - 1000)) * 100}%`, transform: 'translateX(-50%)' }}>
+                    <span>Short Story<br/>(1K-12.5K)</span>
+                  </div>
+                  <div className="absolute" style={{ left: `${((26250 - 1000) / (120000 - 1000)) * 100}%`, transform: 'translateX(-50%)' }}>
+                    <span>Novella<br/>(12.5K-40K)</span>
+                  </div>
+                  <div className="absolute" style={{ left: `${((60000 - 1000) / (120000 - 1000)) * 100}%`, transform: 'translateX(-50%)' }}>
+                    <span>Novel<br/>(40K-80K)</span>
+                  </div>
+                  <div className="absolute" style={{ left: `${((100000 - 1000) / (120000 - 1000)) * 100}%`, transform: 'translateX(-50%)' }}>
+                    <span style={{ whiteSpace: 'nowrap' }}>Epic Novel<br/>(80K-120K)</span>
+                  </div>
+                  {/* Add height to container */}
+                  <div style={{ height: '32px' }}></div>
+                </div>
+
               </div>
             </div>
 
@@ -428,68 +656,76 @@ export default function CreateBookPage() {
               <label className="block text-sm font-medium mb-2">
                 Character Names (Optional)
               </label>
-              {form.characterNames.map((name, index) => (
-                <div key={index} className="flex gap-2 mb-2">
-                  <Input
-                    value={name}
-                    onChange={(e) => updateCharacterName(index, e.target.value)}
-                    placeholder="Character name"
-                    className="flex-1"
-                  />
-                  {form.characterNames.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => removeCharacterName(index)}
-                    >
-                      Remove
-                    </Button>
-                  )}
-                </div>
-              ))}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={addCharacterName}
-              >
-                Add Character
-              </Button>
+              <div className="space-y-2">
+                {form.characterNames.map((name, index) => (
+                  <div key={index} className="flex gap-2">
+                    <Input
+                      value={name}
+                      onChange={(e) => updateCharacterName(index, e.target.value)}
+                      placeholder="Character name"
+                      className="flex-1"
+                    />
+                    {form.characterNames.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => removeCharacterName(index)}
+                        className="px-3"
+                      >
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addCharacterName}
+                  className="mt-2"
+                >
+                  + Add Character
+                </Button>
+              </div>
             </div>
 
             <div>
               <label className="block text-sm font-medium mb-2">
                 Inspiration Books (Optional)
               </label>
-              {form.inspirationBooks.map((book, index) => (
-                <div key={index} className="flex gap-2 mb-2">
-                  <Input
-                    value={book}
-                    onChange={(e) => updateInspirationBook(index, e.target.value)}
-                    placeholder="Book title or author"
-                    className="flex-1"
-                  />
-                  {form.inspirationBooks.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => removeInspirationBook(index)}
-                    >
-                      Remove
-                    </Button>
-                  )}
-                </div>
-              ))}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={addInspirationBook}
-              >
-                Add Book
-              </Button>
+              <div className="space-y-2">
+                {form.inspirationBooks.map((book, index) => (
+                  <div key={index} className="flex gap-2">
+                    <Input
+                      value={book}
+                      onChange={(e) => updateInspirationBook(index, e.target.value)}
+                      placeholder="Book title or author"
+                      className="flex-1"
+                    />
+                    {form.inspirationBooks.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => removeInspirationBook(index)}
+                        className="px-3"
+                      >
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addInspirationBook}
+                  className="mt-2"
+                >
+                  + Add Book
+                </Button>
+              </div>
             </div>
           </div>
         )
@@ -559,6 +795,9 @@ export default function CreateBookPage() {
                 </div>
                 <div>
                   <span className="font-medium">Audience:</span> {form.targetAudience}
+                </div>
+                <div>
+                  <span className="font-medium">Language:</span> {LANGUAGE_OPTIONS.find(lang => lang.code === form.language)?.name || 'English'}
                 </div>
                 <div>
                   <span className="font-medium">Length:</span> {form.wordCount.toLocaleString()} words
@@ -687,4 +926,35 @@ export default function CreateBookPage() {
       </div>
     </div>
   )
+} 
+
+// Add CSS for the custom slider
+const styles = `
+.slider::-webkit-slider-thumb {
+  appearance: none;
+  height: 20px;
+  width: 20px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #3B82F6;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.slider::-moz-range-thumb {
+  height: 20px;
+  width: 20px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #3B82F6;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+`
+
+// Inject styles
+if (typeof document !== 'undefined') {
+  const styleElement = document.createElement('style')
+  styleElement.textContent = styles
+  document.head.appendChild(styleElement)
 } 
