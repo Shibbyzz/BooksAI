@@ -1,0 +1,397 @@
+{
+  "bookId": "cmcsvlcjz00015lbbsphw0nhu",
+  "storyBible": {
+    "overview": {
+      "premise": "Ett par åker ut med sin båt i skärgården och möter en storm",
+      "theme": "Romance",
+      "conflict": "Character faces challenges that test their growth and resilience",
+      "resolution": "Growth through adversity leading to character transformation",
+      "targetAudience": "New Adult (Ages 18-25)",
+      "tone": "Romantic & Emotional"
+    },
+    "characters": [
+      {
+        "name": "Protagonist",
+        "role": "protagonist",
+        "background": "Background appropriate for protagonist role in Romance story",
+        "motivation": "Primary motivation driving Protagonist's actions",
+        "arc": "Undergoes a transformative journey filled with challenges, setbacks, and ultimately growth that changes their perspective and capabilities",
+        "relationships": {},
+        "physicalDescription": "Physical description for Protagonist",
+        "personality": "Personality traits for Protagonist",
+        "flaws": [
+          "Character flaw for Protagonist"
+        ],
+        "strengths": [
+          "Character strength for Protagonist"
+        ]
+      }
+    ],
+    "worldBuilding": {
+      "setting": "Romance-appropriate setting that supports the story themes",
+      "timeframe": "Contemporary or story-appropriate timeframe",
+      "locations": [
+        {
+          "name": "Primary story setting",
+          "description": "Description for Primary story setting",
+          "importance": "Story location"
+        }
+      ],
+      "rules": [
+        "Genre conventions for Romance"
+      ],
+      "history": "Relevant background that informs the current story events"
+    },
+    "storyStructure": {
+      "act1": {
+        "chapters": [
+          1
+        ],
+        "purpose": "Setup and character introduction",
+        "keyEvents": [
+          "Character introduction",
+          "World establishment",
+          "Inciting incident"
+        ]
+      },
+      "act2": {
+        "chapters": [
+          2,
+          3
+        ],
+        "purpose": "Development and rising action",
+        "keyEvents": [
+          "Complications arise",
+          "Character development",
+          "Midpoint reversal"
+        ]
+      },
+      "act3": {
+        "chapters": [],
+        "purpose": "Resolution and conclusion",
+        "keyEvents": [
+          "Climax",
+          "Resolution",
+          "Denouement"
+        ]
+      },
+      "climax": {
+        "chapter": 3,
+        "description": "The major confrontation or decision point that resolves the main conflict"
+      },
+      "resolution": {
+        "chapter": 3,
+        "description": "The aftermath and new equilibrium following the climax"
+      }
+    },
+    "chapterPlans": [
+      {
+        "number": 1,
+        "title": "Chapter 1",
+        "purpose": "Chapter 1 advances the development phase of the story, contributing to character development and plot progression appropriate for New Adult (Ages 18-25) readers.",
+        "scenes": [
+          {
+            "sceneNumber": 1,
+            "purpose": "Significant event in chapter 1 that moves the story forward",
+            "setting": "Primary story setting",
+            "characters": [
+              "Protagonist"
+            ],
+            "conflict": "Chapter conflict",
+            "outcome": "Scene outcome",
+            "wordTarget": 2500,
+            "mood": "Story appropriate mood"
+          }
+        ],
+        "characterArcs": [
+          {
+            "character": "Protagonist",
+            "development": "Character development for Protagonist in chapter 1"
+          }
+        ],
+        "plotThreads": [
+          {
+            "thread": "Main Plot",
+            "development": "Plot development in chapter 1"
+          }
+        ],
+        "wordCountTarget": 2500,
+        "researchFocus": []
+      },
+      {
+        "number": 2,
+        "title": "Chapter 2",
+        "purpose": "Chapter 2 advances the development phase of the story, contributing to character development and plot progression appropriate for New Adult (Ages 18-25) readers.",
+        "scenes": [
+          {
+            "sceneNumber": 1,
+            "purpose": "Significant event in chapter 2 that moves the story forward",
+            "setting": "Primary story setting",
+            "characters": [
+              "Protagonist"
+            ],
+            "conflict": "Chapter conflict",
+            "outcome": "Scene outcome",
+            "wordTarget": 2500,
+            "mood": "Story appropriate mood"
+          }
+        ],
+        "characterArcs": [
+          {
+            "character": "Protagonist",
+            "development": "Character development for Protagonist in chapter 2"
+          }
+        ],
+        "plotThreads": [
+          {
+            "thread": "Main Plot",
+            "development": "Plot development in chapter 2"
+          }
+        ],
+        "wordCountTarget": 2500,
+        "researchFocus": []
+      },
+      {
+        "number": 3,
+        "title": "Chapter 3",
+        "purpose": "Chapter 3 advances the resolution phase of the story, contributing to character development and plot progression appropriate for New Adult (Ages 18-25) readers.",
+        "scenes": [
+          {
+            "sceneNumber": 1,
+            "purpose": "Significant event in chapter 3 that moves the story forward",
+            "setting": "Primary story setting",
+            "characters": [
+              "Protagonist"
+            ],
+            "conflict": "Chapter conflict",
+            "outcome": "Scene outcome",
+            "wordTarget": 2500,
+            "mood": "Story appropriate mood"
+          }
+        ],
+        "characterArcs": [
+          {
+            "character": "Protagonist",
+            "development": "Character development for Protagonist in chapter 3"
+          }
+        ],
+        "plotThreads": [
+          {
+            "thread": "Main Plot",
+            "development": "Plot development in chapter 3"
+          }
+        ],
+        "wordCountTarget": 2500,
+        "researchFocus": []
+      }
+    ],
+    "plotThreads": [
+      {
+        "name": "Main Plot",
+        "description": "The primary story arc following the protagonist's journey",
+        "startChapter": 1,
+        "endChapter": 3,
+        "keyMoments": [
+          {
+            "chapter": 1,
+            "event": "Story begins"
+          },
+          {
+            "chapter": 2,
+            "event": "Midpoint development"
+          },
+          {
+            "chapter": 3,
+            "event": "Story resolution"
+          }
+        ]
+      }
+    ],
+    "timeline": [
+      {
+        "chapter": 1,
+        "timeDescription": "Story time 1",
+        "duration": "Chapter duration",
+        "significantEvents": [
+          "Significant event in chapter 1 that moves the story forward"
+        ]
+      },
+      {
+        "chapter": 2,
+        "timeDescription": "Story time 2",
+        "duration": "Chapter duration",
+        "significantEvents": [
+          "Significant event in chapter 2 that moves the story forward"
+        ]
+      },
+      {
+        "chapter": 3,
+        "timeDescription": "Story time 3",
+        "duration": "Chapter duration",
+        "significantEvents": [
+          "Significant event in chapter 3 that moves the story forward"
+        ]
+      }
+    ]
+  },
+  "qualityPlan": {
+    "narrativeVoice": {
+      "style": "Romantic & Emotional",
+      "perspective": "third-person-limited",
+      "tense": "past",
+      "tone": "Romantic & Emotional",
+      "vocabularyLevel": "moderate",
+      "sentenceStructure": "varied",
+      "voiceCharacteristics": [
+        "Engaging",
+        "Clear",
+        "Emotionally resonant"
+      ]
+    },
+    "foreshadowingPlan": [
+      {
+        "id": "foreshadow_1",
+        "plantChapter": 2,
+        "payoffChapter": 8,
+        "type": "plot",
+        "seedText": "Subtle hint about the main conflict",
+        "payoffText": "Resolution that references the earlier hint",
+        "subtlety": "moderate",
+        "importance": "major"
+      }
+    ],
+    "emotionalPacing": [
+      {
+        "chapter": 1,
+        "section": 1,
+        "emotionalTone": "medium",
+        "emotionType": "surprise",
+        "intensity": 6,
+        "duration": "sustained",
+        "purpose": "Emotional beat for chapter 1"
+      },
+      {
+        "chapter": 2,
+        "section": 1,
+        "emotionalTone": "medium",
+        "emotionType": "tension",
+        "intensity": 7,
+        "duration": "sustained",
+        "purpose": "Emotional beat for chapter 2"
+      },
+      {
+        "chapter": 3,
+        "section": 1,
+        "emotionalTone": "medium",
+        "emotionType": "tension",
+        "intensity": 7,
+        "duration": "sustained",
+        "purpose": "Emotional beat for chapter 3"
+      }
+    ],
+    "transitionGuides": [
+      {
+        "type": "scene-break",
+        "technique": "bridge-paragraph",
+        "smoothness": 8
+      },
+      {
+        "type": "time-jump",
+        "technique": "fade-out",
+        "smoothness": 8
+      },
+      {
+        "type": "location-change",
+        "technique": "hard-cut",
+        "smoothness": 8
+      },
+      {
+        "type": "chapter-end",
+        "technique": "cliffhanger",
+        "smoothness": 8
+      },
+      {
+        "type": "perspective-shift",
+        "technique": "reflection",
+        "smoothness": 8
+      }
+    ],
+    "genreConventions": {
+      "genre": "Romance",
+      "expectations": [
+        "Character chemistry",
+        "Emotional development",
+        "Satisfying relationship arc",
+        "Happy/hopeful ending"
+      ],
+      "pacing": "moderate",
+      "structureRules": [
+        "Meet cute or conflict",
+        "Obstacles and growth",
+        "Emotional climax"
+      ],
+      "readerPayoffs": [
+        "Emotional satisfaction",
+        "Character growth",
+        "Relationship triumph"
+      ],
+      "avoidances": [
+        "Insta-love without development",
+        "Unresolved conflicts",
+        "Unsatisfying endings"
+      ]
+    },
+    "subtextLayers": [
+      {
+        "chapter": 1,
+        "themes": [
+          "Romance"
+        ],
+        "symbolism": [
+          "Chapter 1 symbolism"
+        ],
+        "characterSubtext": [
+          {
+            "character": "Protagonist",
+            "hiddenMeaning": "Protagonist's hidden emotional layer"
+          }
+        ]
+      },
+      {
+        "chapter": 2,
+        "themes": [
+          "Romance"
+        ],
+        "symbolism": [
+          "Chapter 2 symbolism"
+        ],
+        "characterSubtext": [
+          {
+            "character": "Protagonist",
+            "hiddenMeaning": "Protagonist's hidden emotional layer"
+          }
+        ]
+      },
+      {
+        "chapter": 3,
+        "themes": [
+          "Romance"
+        ],
+        "symbolism": [
+          "Chapter 3 symbolism"
+        ],
+        "characterSubtext": [
+          {
+            "character": "Protagonist",
+            "hiddenMeaning": "Protagonist's hidden emotional layer"
+          }
+        ]
+      }
+    ]
+  },
+  "completedChapters": [],
+  "completedSections": {},
+  "failedSections": [],
+  "timestamp": "2025-07-07T09:09:08.669Z",
+  "version": "1.0"
+}

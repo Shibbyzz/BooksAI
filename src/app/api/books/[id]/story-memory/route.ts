@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth-helpers';
-import { BookGenerationOrchestrator } from '@/lib/ai/orchestrator';
+import { BookGenerationOrchestrator } from '@/lib/ai/orchestrator-v2';
 import { prisma } from '@/lib/prisma';
 
 export async function GET(

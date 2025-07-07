@@ -247,7 +247,10 @@
       "updateFrequency": "Updates every few seconds • This process may take 10-30 minutes",
       "redisUnavailable": "⚠️ Using cached progress (Redis temporarily unavailable)",
       "lastUpdated": "Last updated: {time}"
-    }
+    },
+    "exportingBook": "Exporting book...",
+    "bookExportedSuccessfully": "Book exported successfully!",
+    "exportFailed": "Failed to export book. Please try again."
   },
   "bookCreate": {
     "title": "Create New Book",

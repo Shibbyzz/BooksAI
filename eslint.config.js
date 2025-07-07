@@ -1,5 +1,7 @@
+const tsParser = require('@typescript-eslint/parser');
+
 // Simple ESLint configuration for v9
-export default [
+module.exports = [
   {
     ignores: [
       "node_modules/",
@@ -12,6 +14,14 @@ export default [
   },
   {
     files: ["**/*.{js,jsx,ts,tsx}"],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+        project: './tsconfig.json'
+      }
+    },
     rules: {
       // Basic rules that should work without complex plugin setup
       "prefer-const": "error",

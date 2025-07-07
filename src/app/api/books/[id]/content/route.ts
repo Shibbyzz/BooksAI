@@ -47,32 +47,43 @@ export async function GET(
       }, { status: 400 })
     }
 
-    // Format the response for the reader
+    // Format the response for the reader - combine section content into chapter content
     const bookContent = {
       id: book.id,
       title: book.title,
       backCover: book.backCover,
-      chapters: book.chapters.map(chapter => ({
-        id: chapter.id,
-        chapterNumber: chapter.chapterNumber,
-        title: chapter.title,
-        summary: chapter.summary,
-        sections: chapter.sections.map(section => ({
-          id: section.id,
-          sectionNumber: section.sectionNumber,
-          title: section.title,
-          content: section.content,
-          wordCount: section.wordCount
-        }))
-      }))
+      chapters: book.chapters.map(chapter => {
+        // Combine all sections into a single chapter content
+        const combinedContent = chapter.sections
+          .map(section => section.content)
+          .filter(content => content && content.trim().length > 0)
+          .join('\n\n');
+
+        // Calculate total word count
+        const totalWordCount = chapter.sections.reduce((sum, section) => sum + section.wordCount, 0);
+
+        return {
+          id: chapter.id,
+          chapterNumber: chapter.chapterNumber,
+          title: chapter.title,
+          summary: chapter.summary,
+          content: combinedContent, // This is what the read page expects
+          wordCount: totalWordCount,
+          // Also include sections for debugging/alternate display
+          sections: chapter.sections.map(section => ({
+            id: section.id,
+            sectionNumber: section.sectionNumber,
+            title: section.title,
+            content: section.content,
+            wordCount: section.wordCount
+          }))
+        };
+      })
     }
 
     return NextResponse.json(bookContent)
   } catch (error) {
     console.error('Error fetching book content:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch book content' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 } 

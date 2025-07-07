@@ -12,21 +12,30 @@ import { useTranslations } from '@/providers/IntlProvider'
 interface Chapter {
   chapterNumber: number
   title: string
+  content: string  // This field now comes from combined sections
+  wordCount: number
+  status?: string
+  sections?: Section[]  // Optional for debugging
+}
+
+interface Section {
+  id: string
+  sectionNumber: number
+  title?: string
   content: string
   wordCount: number
-  status: string
 }
 
 interface BookData {
   id: string
   title: string
-  author: string
-  genre: string
+  author?: string
+  genre?: string
   chapters: Chapter[]
-  totalWordCount: number
-  status: string
-  createdAt: string
-  updatedAt: string
+  totalWordCount?: number
+  status?: string
+  createdAt?: string
+  updatedAt?: string
 }
 
 export default function BookReaderPage() {

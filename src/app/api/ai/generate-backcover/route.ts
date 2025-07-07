@@ -1,21 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { BookGenerationOrchestrator } from '@/lib/ai/orchestrator';
+import { BookGenerationOrchestrator } from '@/lib/ai/orchestrator-v2';
 import { getCurrentUser } from '@/lib/auth-helpers';
 import { prisma } from '@/lib/prisma';
 import type { BookSettings } from '@/types';
+import { 
+  checkSubscriptionAccess, 
+  createSubscriptionErrorResponse 
+} from '@/lib/subscription/subscription-middleware';
 
 export async function POST(request: NextRequest) {
   try {
-    // Check authentication
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Authentication required' },
-        { status: 401 }
-      );
-    }
-
-    // Parse request body
+    // Parse request body first to get word count for subscription check
     const body = await request.json();
     const { bookId, userPrompt, settings } = body;
 
@@ -25,6 +20,18 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // Check subscription limits (back cover generation is free for all tiers)
+    const subscriptionCheck = await checkSubscriptionAccess(request, {
+      requiresPremium: false, // Back cover generation available to all
+      featureName: 'Back Cover Generation'
+    });
+
+    if (!subscriptionCheck.success) {
+      return createSubscriptionErrorResponse(subscriptionCheck);
+    }
+
+    const user = subscriptionCheck.user!;
 
     // Verify book ownership
     const book = await prisma.book.findFirst({

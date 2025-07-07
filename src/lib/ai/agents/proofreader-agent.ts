@@ -1,6 +1,8 @@
 import { generateAIText } from '@/lib/openai';
 import type { BookSettings } from '@/types';
 import { ProseValidator, type ProseValidation } from '@/lib/proseValidator';
+import { LanguageManager } from '../language/language-utils';
+import { LanguagePrompts } from '../language/language-prompts';
 
 export interface ProofreaderAgentConfig {
   model: string;
@@ -48,9 +50,13 @@ export interface ChapterProofreadContext {
 
 export class ProofreaderAgent {
   private config: ProofreaderAgentConfig;
+  private languageManager: LanguageManager;
+  private languagePrompts: LanguagePrompts;
 
   constructor(config: ProofreaderAgentConfig) {
     this.config = config;
+    this.languageManager = LanguageManager.getInstance();
+    this.languagePrompts = LanguagePrompts.getInstance();
   }
 
   /**
@@ -58,13 +64,15 @@ export class ProofreaderAgent {
    */
   async proofreadChapter(context: ChapterProofreadContext): Promise<ProofreadingResult> {
     try {
+      const languageCode = context.settings.language || 'en';
       const prompt = this.buildProofreadingPrompt(context);
+      const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, this.config.temperature);
       
       const response = await generateAIText(prompt, {
         model: this.config.model,
-        temperature: this.config.temperature,
+        temperature: adjustedTemperature,
         maxTokens: this.config.maxTokens,
-        system: this.getSystemPrompt()
+        system: this.getSystemPrompt(languageCode)
       });
 
       if (!response.text) {
@@ -89,6 +97,12 @@ export class ProofreaderAgent {
 
       // Validate prose quality
       const proseValidation = ProseValidator.validateProse(result.polishedContent);
+      
+      // Validate language output
+      const languageValidation = this.languageManager.validateLanguageOutput(result.polishedContent, languageCode);
+      if (!languageValidation.isValid) {
+        console.warn(`ProofreaderAgent: Language validation failed for ${languageCode}`, languageValidation.warnings);
+      }
       
       // Calculate quality score and scoring summary
       const qualityAnalysis = ProseValidator.calculateQualityScore(proseValidation, result.corrections.length);
@@ -133,21 +147,36 @@ export class ProofreaderAgent {
    */
   async quickPolish(content: string, settings: BookSettings): Promise<string> {
     try {
-      const prompt = `Polish this text for grammar, clarity, and flow while maintaining the ${settings.tone} tone and ${settings.genre} genre style:
+      const languageCode = settings.language || 'en';
+      const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, 0.0);
+      
+      let prompt = `Polish this text for grammar, clarity, and flow while maintaining the ${settings.tone} tone and ${settings.genre} genre style:
 
 ORIGINAL TEXT:
 ${content}
 
 POLISHED VERSION (return only the improved text):`;
 
+      // Add language-specific instructions for non-English content
+      const languageAdditions = this.languageManager.getContentPromptAdditions(languageCode, settings.genre);
+      prompt += languageAdditions;
+
       const response = await generateAIText(prompt, {
         model: this.config.model,
-        temperature: 0.0, // Lower temperature for consistency
+        temperature: adjustedTemperature,
         maxTokens: Math.min(this.config.maxTokens, 3000),
-        system: 'You are a professional editor specializing in quick, high-quality text improvements.'
+        system: this.getSystemPrompt(languageCode)
       });
 
-      return response.text.trim() || content;
+      const polishedContent = response.text.trim() || content;
+      
+      // Validate language output
+      const languageValidation = this.languageManager.validateLanguageOutput(polishedContent, languageCode);
+      if (!languageValidation.isValid) {
+        console.warn(`ProofreaderAgent.quickPolish: Language validation failed for ${languageCode}`, languageValidation.warnings);
+      }
+
+      return polishedContent;
       
     } catch (error) {
       console.error('Quick polish error:', error);
@@ -160,21 +189,34 @@ POLISHED VERSION (return only the improved text):`;
    */
   async quickPolishDetailed(content: string, settings: BookSettings): Promise<QuickPolishResult> {
     try {
-      const prompt = `Polish this text for grammar, clarity, and flow while maintaining the ${settings.tone} tone and ${settings.genre} genre style:
+      const languageCode = settings.language || 'en';
+      const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, 0.0);
+      
+      let prompt = `Polish this text for grammar, clarity, and flow while maintaining the ${settings.tone} tone and ${settings.genre} genre style:
 
 ORIGINAL TEXT:
 ${content}
 
 POLISHED VERSION (return only the improved text):`;
 
+      // Add language-specific instructions for non-English content
+      const languageAdditions = this.languageManager.getContentPromptAdditions(languageCode, settings.genre);
+      prompt += languageAdditions;
+
       const response = await generateAIText(prompt, {
         model: this.config.model,
-        temperature: 0.0, // Lower temperature for consistency
+        temperature: adjustedTemperature,
         maxTokens: Math.min(this.config.maxTokens, 3000),
-        system: 'You are a professional editor specializing in quick, high-quality text improvements.'
+        system: this.getSystemPrompt(languageCode)
       });
 
       const polishedContent = response.text.trim() || content;
+      
+      // Validate language output
+      const languageValidation = this.languageManager.validateLanguageOutput(polishedContent, languageCode);
+      if (!languageValidation.isValid) {
+        console.warn(`ProofreaderAgent.quickPolishDetailed: Language validation failed for ${languageCode}`, languageValidation.warnings);
+      }
       
       // Validate prose quality
       const proseValidation = ProseValidator.validateProse(polishedContent);
@@ -216,21 +258,36 @@ POLISHED VERSION (return only the improved text):`;
     polishedContent: string;
     corrections: ProofreadingCorrection[];
   }> {
-    const simplifiedPrompt = `Please improve this chapter content for a ${context.settings.genre} book. Fix grammar, improve clarity, and enhance flow while maintaining the ${context.settings.tone} tone:
+    const languageCode = context.settings.language || 'en';
+    const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, 0.0);
+    
+    let simplifiedPrompt = `Please improve this chapter content for a ${context.settings.genre} book. Fix grammar, improve clarity, and enhance flow while maintaining the ${context.settings.tone} tone:
 
 ${context.content}
 
 Return only the improved version:`;
 
+    // Add language-specific instructions for non-English content
+    const languageAdditions = this.languageManager.getContentPromptAdditions(languageCode, context.settings.genre);
+    simplifiedPrompt += languageAdditions;
+
     const response = await generateAIText(simplifiedPrompt, {
       model: this.config.model,
-      temperature: 0.0,
+      temperature: adjustedTemperature,
       maxTokens: this.config.maxTokens,
-      system: 'You are a professional editor. Return only the improved text without explanations.'
+      system: this.getSystemPrompt(languageCode)
     });
 
+    const polishedContent = response.text.trim() || context.content;
+    
+    // Validate language output
+    const languageValidation = this.languageManager.validateLanguageOutput(polishedContent, languageCode);
+    if (!languageValidation.isValid) {
+      console.warn(`ProofreaderAgent.retryWithSimplifiedPrompt: Language validation failed for ${languageCode}`, languageValidation.warnings);
+    }
+
     return {
-      polishedContent: response.text.trim() || context.content,
+      polishedContent,
       corrections: [{
         type: 'style',
         original: 'Original content',
@@ -255,31 +312,8 @@ Return only the improved version:`;
 
 
 
-  private getSystemPrompt(): string {
-    return `You are a professional book editor and proofreader with expertise in fiction writing. Your role is to polish and improve written content while preserving the author's voice and style.
-
-PROOFREADING FOCUS AREAS:
-1. GRAMMAR & MECHANICS: Fix grammatical errors, punctuation, spelling
-2. STYLE & FLOW: Improve sentence structure, rhythm, and readability  
-3. CONSISTENCY: Ensure character names, descriptions, and details remain consistent
-4. CLARITY: Make unclear passages more comprehensible without changing meaning
-5. VOICE: Maintain the established tone and narrative voice throughout
-
-QUALITY STANDARDS:
-- Preserve the original meaning and creative intent
-- Maintain character voices and dialogue authenticity
-- Ensure smooth transitions between scenes and paragraphs
-- Fix passive voice where active would be stronger
-- Eliminate redundancy and improve word choice
-- Check for continuity errors within the chapter
-
-OUTPUT FORMAT:
-Always provide a structured response with:
-- POLISHED_CONTENT: The improved version of the text
-- CORRECTIONS: List of specific changes made with reasons
-- QUALITY_SCORE: Overall quality rating (1-100)
-
-Focus on meaningful improvements that enhance readability and professionalism.`;
+  private getSystemPrompt(languageCode: string = 'en'): string {
+    return this.languagePrompts.getProofreaderSystemPrompt(languageCode);
   }
 
   private buildProofreadingPrompt(context: ChapterProofreadContext): string {
@@ -293,7 +327,9 @@ Focus on meaningful improvements that enhance readability and professionalism.`;
       overallTone = settings.tone
     } = context;
 
-    return `Proofread and polish Chapter ${chapterNumber}: "${chapterTitle}" for a ${settings.genre} book.
+    const languageCode = settings.language || 'en';
+
+    const prompt = `Proofread and polish Chapter ${chapterNumber}: "${chapterTitle}" for a ${settings.genre} book.
 
 BOOK CONTEXT:
 - Genre: ${settings.genre}
@@ -313,6 +349,10 @@ Please provide comprehensive proofreading that includes:
 3. QUALITY_SCORE: Overall quality rating from 1-100
 
 Focus on maintaining the ${settings.tone} tone while improving clarity, flow, and professional quality.`;
+
+    // Add language-specific instructions for non-English content
+    const languageAdditions = this.languageManager.getContentPromptAdditions(languageCode, settings.genre);
+    return prompt + languageAdditions;
   }
 
   private parseProofreadingResult(originalContent: string, response: string): {

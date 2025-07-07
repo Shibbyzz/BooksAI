@@ -3,6 +3,8 @@ import type { BookSettings } from '@/types';
 import type { ComprehensiveResearch } from '../validators/research';
 import type { OutlineGeneration } from './planning-agent';
 import { GenreStructurePlanner } from '../planning/genre-structure';
+import { LanguageManager } from '../language/language-utils';
+import { LanguagePrompts } from '../language/language-prompts';
 
 export interface ChiefEditorConfig {
   model: string;
@@ -165,6 +167,8 @@ export interface StoryBible {
  */
 export class ChiefEditorAgent {
   private config: ChiefEditorConfig;
+  private languageManager: LanguageManager;
+  private languagePrompts: LanguagePrompts;
 
   constructor(config?: Partial<ChiefEditorConfig>) {
     this.config = {
@@ -173,6 +177,9 @@ export class ChiefEditorAgent {
       maxTokens: 6000,
       ...config
     };
+    
+    this.languageManager = LanguageManager.getInstance();
+    this.languagePrompts = LanguagePrompts.getInstance();
   }
 
   /**
@@ -472,7 +479,10 @@ Provide specific adjustments and their impact on future chapters.`;
     const chapterPlans: StoryBible['chapterPlans'] = [];
     
     for (const chapter of outline.chapters) {
-      const prompt = `Create detailed scene-by-scene plan for this chapter:
+      const languageCode = settings.language || 'en';
+      const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, 0.7);
+      
+      const basePrompt = `Create detailed scene-by-scene plan for this chapter:
 
 CHAPTER: ${chapter.title}
 SUMMARY: ${chapter.summary}
@@ -502,11 +512,14 @@ Respond with this EXACT JSON format:
 
 Ensure scenes add up to the chapter word target and flow naturally together.`;
 
+      const languageAdditions = this.languageManager.getContentPromptAdditions(languageCode, settings.genre);
+      const prompt = basePrompt + languageAdditions;
+
       const response = await this.generateAITextWithRetry(prompt, {
         model: this.config.model,
-        temperature: 0.7,
+        temperature: adjustedTemperature,
         maxTokens: 2000,
-        system: 'You are a master story planner creating detailed scene breakdowns. Focus on natural story flow and compelling narrative progression.'
+        system: this.languageManager.getSystemPrompt(languageCode, 'You are a master story planner creating detailed scene breakdowns. Focus on natural story flow and compelling narrative progression.')
       }, `Scene Plans: ${chapter.title}`);
 
       const scenes = await this.parseScenePlans(response.text, chapter.wordCountTarget);
@@ -546,7 +559,10 @@ Ensure scenes add up to the chapter word target and flow naturally together.`;
     const characterSummaries = characters.map((c: OutlineGeneration['characters'][0]) => `${c.name} (${c.role}): ${c.description}`);
     
     for (const character of characters) {
-      const prompt = `Create detailed character profile:
+      const languageCode = settings.language || 'en';
+      const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, 0.8);
+      
+      const basePrompt = `Create detailed character profile:
 
 CHARACTER: ${character.name}
 ROLE: ${character.role}
@@ -573,11 +589,14 @@ Consider how this character fits into the ensemble and their potential relations
 
 Make this character feel real and compelling for a ${settings.genre} story.`;
 
+      const languageAdditions = this.languageManager.getContentPromptAdditions(languageCode, settings.genre);
+      const prompt = basePrompt + languageAdditions;
+
       const response = await this.generateAITextWithRetry(prompt, {
         model: this.config.model,
-        temperature: 0.8,
+        temperature: adjustedTemperature,
         maxTokens: 1500,
-        system: 'You are a character development expert. Create rich, three-dimensional characters with clear motivations and compelling arcs.'
+        system: this.languageManager.getSystemPrompt(languageCode, 'You are a character development expert. Create rich, three-dimensional characters with clear motivations and compelling arcs.')
       }, `Character Profile: ${character.name}`);
 
       const characterProfile = await this.parseCharacterProfile(response.text, character);
@@ -608,7 +627,10 @@ Make this character feel real and compelling for a ${settings.genre} story.`;
       `${c.name} (${c.role}): ${c.background} - Motivated by: ${c.motivation}`
     );
     
-    const prompt = `Analyze these characters and define their relationships:
+    const languageCode = settings.language || 'en';
+    const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, 0.7);
+    
+    const basePrompt = `Analyze these characters and define their relationships:
 
 CHARACTERS:
 ${characterSummaries.join('\n')}
@@ -638,12 +660,15 @@ Respond with a JSON structure:
 
 Make relationships feel natural and serve the story.`;
 
+    const languageAdditions = this.languageManager.getContentPromptAdditions(languageCode, settings.genre);
+    const prompt = basePrompt + languageAdditions;
+
     try {
       const response = await this.generateAITextWithRetry(prompt, {
         model: this.config.model,
-        temperature: 0.7,
+        temperature: adjustedTemperature,
         maxTokens: 2000,
-        system: 'You are a character relationship expert. Create believable, compelling relationships between characters that serve the story.'
+        system: this.languageManager.getSystemPrompt(languageCode, 'You are a character relationship expert. Create believable, compelling relationships between characters that serve the story.')
       }, 'Character Relationships');
       
       const relationships = await this.parseCharacterRelationships(response.text, characterNames);

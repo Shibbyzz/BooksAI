@@ -3,6 +3,8 @@ import type { BookSettings } from '@/types';
 import type { ComprehensiveResearch } from '../validators/research';
 import fs from 'fs/promises';
 import path from 'path';
+import { LanguageManager } from '../language/language-utils';
+import { LanguagePrompts } from '../language/language-prompts';
 
 // Import prompt builders
 import {
@@ -97,7 +99,7 @@ export interface ConsistencyReport {
 // Category check runner interface
 interface CategoryCheckRunner {
   category: ConsistencyCategory;
-  runner: (chapterNumber: number, content: string, researchUsed: string[], trace: ContinuityTrace) => Promise<ConsistencyIssue[]>;
+  runner: (chapterNumber: number, content: string, researchUsed: string[], trace: ContinuityTrace, settings?: BookSettings) => Promise<ConsistencyIssue[]>;
 }
 
 // Generic prompt builder type
@@ -135,6 +137,8 @@ export class ContinuityInspectorAgent {
   private trackerFilePath: string;
   private promptConfig: ContinuityPromptConfig;
   private categoryRunners: CategoryCheckRunner[];
+  private languageManager: LanguageManager;
+  private languagePrompts: LanguagePrompts;
   
   // Caching for performance
   private characterLookupCache: Map<string, CharacterState> = new Map();
@@ -156,6 +160,9 @@ export class ContinuityInspectorAgent {
       parsingRetries: 2,
       ...config
     };
+
+    this.languageManager = LanguageManager.getInstance();
+    this.languagePrompts = LanguagePrompts.getInstance();
 
     this.promptConfig = {
       maxContentLength: this.config.maxContentLength
@@ -229,7 +236,9 @@ export class ContinuityInspectorAgent {
     prompt: string,
     context: string,
     validator: (text: string) => T,
-    trace: ContinuityTrace
+    trace: ContinuityTrace,
+    languageCode?: string,
+    temperature?: number
   ): Promise<T> {
     let lastError: Error | null = null;
     const startAttempt = trace.retryAttempts;
@@ -245,7 +254,7 @@ export class ContinuityInspectorAgent {
         const response = await this.runWithRetry(
           () => generateAIText(currentPrompt, {
             model: this.config.model,
-            temperature: this.config.temperature,
+            temperature: temperature || this.config.temperature,
             maxTokens: this.config.maxTokens,
             system: 'You are a story continuity analyst. Always respond with valid JSON only.'
           }),
@@ -272,34 +281,43 @@ export class ContinuityInspectorAgent {
   }
 
   /**
-   * Generic consistency check runner to reduce duplication
+   * Generic consistency check for reusable logic
    */
   private async runGenericConsistencyCheck(
-    category: ConsistencyCategory,
+    category: string,
     chapterNumber: number,
     content: string,
     researchUsed: string[],
     trace: ContinuityTrace,
-    promptBuilder: PromptBuilder,
-    ...promptArgs: any[]
+    promptBuilder: Function,
+    contextData: any,
+    additionalData?: any,
+    settings?: BookSettings
   ): Promise<ConsistencyIssue[]> {
-    const categoryInfo = CONSISTENCY_CATEGORIES[category];
-    const context = `${categoryInfo.name} check`;
-    
     try {
-      const prompt = promptBuilder(chapterNumber, content, ...promptArgs);
+      const languageCode = settings?.language || 'en';
+      const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, this.config.temperature);
+      
+      const basePrompt = additionalData 
+        ? promptBuilder(contextData, chapterNumber, content, researchUsed, this.promptConfig, additionalData)
+        : promptBuilder(contextData, chapterNumber, content, this.promptConfig);
+        
+      const languageAdditions = this.languageManager.getContentPromptAdditions(languageCode, settings?.genre);
+      const prompt = basePrompt + languageAdditions;
       
       const response = await this.generateWithParsingRetry(
         prompt,
-        context,
+        `${category} consistency check`,
         safeConsistencyIssuesValidator,
-        trace
+        trace,
+        languageCode,
+        adjustedTemperature
       );
       
       trace.aiResponses[category] = JSON.stringify(response);
       return this.parseConsistencyIssues(response, chapterNumber);
     } catch (error) {
-      const errorMsg = `${context} failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      const errorMsg = `${category} check failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
       trace.parseErrors.push(errorMsg);
       console.error(`❌ ${errorMsg}`);
       return [];
@@ -314,7 +332,8 @@ export class ContinuityInspectorAgent {
     chapterNumber: number,
     content: string,
     researchUsed: string[],
-    trace: ContinuityTrace
+    trace: ContinuityTrace,
+    settings?: BookSettings
   ): Promise<ConsistencyIssue[]> {
     const runner = this.categoryRunners.find(r => r.category === category);
     if (!runner) {
@@ -326,7 +345,7 @@ export class ContinuityInspectorAgent {
     console.log(`🔍 Running ${categoryInfo.name} check for Chapter ${chapterNumber}`);
     
     try {
-      const issues = await runner.runner(chapterNumber, content, researchUsed, trace);
+      const issues = await runner.runner(chapterNumber, content, researchUsed, trace, settings);
       console.log(`✅ ${categoryInfo.name} check complete - ${issues.length} issues found`);
       return issues;
     } catch (error) {
@@ -344,20 +363,27 @@ export class ContinuityInspectorAgent {
     chapterNumber: number,
     content: string,
     researchUsed: string[],
-    trace: ContinuityTrace
+    trace: ContinuityTrace,
+    settings?: BookSettings
   ): Promise<ConsistencyIssue[]> {
     const issues: ConsistencyIssue[] = [];
+    const languageCode = settings?.language || 'en';
+    const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, this.config.temperature);
     
     for (const character of this.tracker.characters) {
       if (content.toLowerCase().includes(character.name.toLowerCase())) {
         try {
-          const prompt = buildCharacterPrompt(character, chapterNumber, content, this.promptConfig);
+          const basePrompt = buildCharacterPrompt(character, chapterNumber, content, this.promptConfig);
+          const languageAdditions = this.languageManager.getContentPromptAdditions(languageCode, settings?.genre);
+          const prompt = basePrompt + languageAdditions;
           
           const response = await this.generateWithParsingRetry(
             prompt,
             `Character consistency check for ${character.name}`,
             safeConsistencyIssuesValidator,
-            trace
+            trace,
+            languageCode,
+            adjustedTemperature
           );
           
           trace.aiResponses[`character_${character.name}`] = JSON.stringify(response);
@@ -381,7 +407,8 @@ export class ContinuityInspectorAgent {
     chapterNumber: number,
     content: string,
     researchUsed: string[],
-    trace: ContinuityTrace
+    trace: ContinuityTrace,
+    settings?: BookSettings
   ): Promise<ConsistencyIssue[]> {
     const recentTimeline = this.getRecentTimeline(5);
     return this.runGenericConsistencyCheck(
@@ -392,7 +419,8 @@ export class ContinuityInspectorAgent {
       trace,
       buildTimelinePrompt,
       recentTimeline,
-      this.promptConfig
+      this.promptConfig,
+      settings
     );
   }
 
@@ -403,7 +431,8 @@ export class ContinuityInspectorAgent {
     chapterNumber: number,
     content: string,
     researchUsed: string[],
-    trace: ContinuityTrace
+    trace: ContinuityTrace,
+    settings?: BookSettings
   ): Promise<ConsistencyIssue[]> {
     return this.runGenericConsistencyCheck(
       'worldbuilding',
@@ -413,7 +442,8 @@ export class ContinuityInspectorAgent {
       trace,
       buildWorldbuildingPrompt,
       this.tracker.worldBuilding,
-      this.promptConfig
+      this.promptConfig,
+      settings
     );
   }
 
@@ -424,7 +454,8 @@ export class ContinuityInspectorAgent {
     chapterNumber: number,
     content: string,
     researchUsed: string[],
-    trace: ContinuityTrace
+    trace: ContinuityTrace,
+    settings?: BookSettings
   ): Promise<ConsistencyIssue[]> {
     if (researchUsed.length === 0) {
       return [];
@@ -439,7 +470,7 @@ export class ContinuityInspectorAgent {
       buildResearchPrompt,
       researchUsed,
       this.tracker.researchReferences,
-      this.promptConfig
+      settings
     );
   }
 
@@ -598,7 +629,8 @@ export class ContinuityInspectorAgent {
     chapterNumber: number,
     chapterContent: string,
     chapterSummary: string,
-    researchUsed: string[]
+    researchUsed: string[],
+    settings?: BookSettings
   ): Promise<ConsistencyReport> {
     const startTime = Date.now();
     const trace: ContinuityTrace = {
@@ -618,11 +650,11 @@ export class ContinuityInspectorAgent {
       
       // Update tracker with chapter information
       trace.processingSteps.push('Updating tracker from chapter');
-      await this.updateTrackerFromChapter(chapterNumber, chapterContent, chapterSummary, researchUsed, trace);
+      await this.updateTrackerFromChapter(chapterNumber, chapterContent, chapterSummary, researchUsed, trace, settings);
       
       // Perform consistency checks using loopable structure
       trace.processingSteps.push('Performing consistency checks');
-      const issues = await this.performConsistencyChecks(chapterNumber, chapterContent, researchUsed, trace);
+      const issues = await this.performConsistencyChecks(chapterNumber, chapterContent, researchUsed, trace, settings);
       trace.issuesFound = issues.length;
       
       // Calculate scores
@@ -639,7 +671,9 @@ export class ContinuityInspectorAgent {
       
       trace.processingTime = Date.now() - startTime;
       
-      const report: ConsistencyReport = {
+      console.log(`✅ Consistency check complete - Score: ${overallScore}/100, Issues: ${issues.length}`);
+      
+      return {
         overallScore,
         categoryScores,
         issues,
@@ -647,15 +681,22 @@ export class ContinuityInspectorAgent {
         recommendations,
         trace
       };
-
-      console.log(`✅ Consistency check complete. Score: ${overallScore}/100 (${trace.processingTime}ms)`);
-      return report;
       
     } catch (error) {
       trace.processingTime = Date.now() - startTime;
-      trace.parseErrors.push(error instanceof Error ? error.message : 'Unknown error');
+      const errorMsg = `Consistency check failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      trace.parseErrors.push(errorMsg);
       console.error('❌ Error checking chapter consistency:', error);
-      throw new Error(`Consistency check failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      // Return partial results
+      return {
+        overallScore: 0,
+        categoryScores: {},
+        issues: [],
+        successfulElements: [],
+        recommendations: ['❌ Consistency check failed - please retry'],
+        trace
+      };
     }
   }
 
@@ -674,16 +715,24 @@ export class ContinuityInspectorAgent {
     content: string,
     summary: string,
     researchUsed: string[],
-    trace: ContinuityTrace
+    trace: ContinuityTrace,
+    settings?: BookSettings
   ): Promise<void> {
     try {
-      const prompt = buildTrackerUpdatePrompt(chapterNumber, content, summary, researchUsed, this.promptConfig);
+      const languageCode = settings?.language || 'en';
+      const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, this.config.temperature);
+      
+      const basePrompt = buildTrackerUpdatePrompt(chapterNumber, content, summary, researchUsed, this.promptConfig);
+      const languageAdditions = this.languageManager.getContentPromptAdditions(languageCode, settings?.genre);
+      const prompt = basePrompt + languageAdditions;
       
       const updates = await this.generateWithParsingRetry(
         prompt,
         'Extracting tracker updates',
         safeTrackerUpdatesValidator,
-        trace
+        trace,
+        languageCode,
+        adjustedTemperature
       );
       
       trace.aiResponses['trackerUpdates'] = JSON.stringify(updates);
@@ -698,13 +747,14 @@ export class ContinuityInspectorAgent {
   }
 
   /**
-   * Perform consistency checks for a chapter using loopable structure
+   * Perform all consistency checks
    */
   private async performConsistencyChecks(
     chapterNumber: number,
     content: string,
     researchUsed: string[],
-    trace: ContinuityTrace
+    trace: ContinuityTrace,
+    settings?: BookSettings
   ): Promise<ConsistencyIssue[]> {
     const issues: ConsistencyIssue[] = [];
     
@@ -712,7 +762,7 @@ export class ContinuityInspectorAgent {
       // Run all consistency checks using the loopable structure
       for (const category of Object.keys(CONSISTENCY_CATEGORIES) as ConsistencyCategory[]) {
         trace.processingSteps.push(`Checking ${category} consistency`);
-        const categoryIssues = await this.runConsistencyCheck(category, chapterNumber, content, researchUsed, trace);
+        const categoryIssues = await this.runConsistencyCheck(category, chapterNumber, content, researchUsed, trace, settings);
         issues.push(...categoryIssues);
       }
       

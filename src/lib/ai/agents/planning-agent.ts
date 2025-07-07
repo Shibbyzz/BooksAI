@@ -8,7 +8,9 @@ import {
 import { ChiefEditorAgent } from './chief-editor-agent';
 import type { BookSettings } from '@/types';
 import type { ComprehensiveResearch } from '../validators/research';
-import type { BookStructurePlan, StoryBible } from './chief-editor-agent';
+import type { BookStructurePlan, StoryBible, ChapterStructure } from './chief-editor-agent';
+import { LanguageManager } from '../language/language-utils';
+import { LanguagePrompts } from '../language/language-prompts';
 
 // Zod schemas for validation
 const PlanningInputSchema = z.object({
@@ -142,20 +144,31 @@ export class PlanningAgent {
   private config: PlanningAgentConfig;
   private chiefEditor: ChiefEditorAgent;
   private currentStepRetries: StepRetryCount[] = [];
+  private languageManager: LanguageManager;
+  private languagePrompts: LanguagePrompts;
 
   constructor(config?: Partial<PlanningAgentConfig>) {
     this.config = {
       model: 'gpt-4o-mini',
       temperature: 0.7,
-      maxTokens: 4000,
+      maxTokens: 8000,
       maxRetries: 3,
       ...config
     };
     
     this.chiefEditor = new ChiefEditorAgent({
       model: this.config.model,
+      temperature: 0.7,
+      maxTokens: 8000,
+    });
+    
+    this.languageManager = LanguageManager.getInstance();
+    this.languagePrompts = LanguagePrompts.getInstance();
+    
+    console.log('🎯 PlanningAgent initialized with:', {
+      model: this.config.model,
       temperature: this.config.temperature,
-      maxTokens: this.config.maxTokens
+      maxTokens: this.config.maxTokens,
     });
   }
 
@@ -396,19 +409,27 @@ export class PlanningAgent {
     settings: BookSettings
   ): Promise<string> {
     try {
-      const prompt = createBackCoverPrompt({ userPrompt, settings });
+      const languageCode = settings.language || 'en';
+      const prompt = this.languagePrompts.getBackCoverPrompt(languageCode, userPrompt, settings);
+      const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, this.config.temperature);
       
       const response = await generateAIText(prompt, {
         model: this.config.model,
-        temperature: this.config.temperature,
+        temperature: adjustedTemperature,
         maxTokens: this.config.maxTokens,
-        system: 'You are a professional book marketing expert and editor specializing in compelling back cover descriptions.'
+        system: this.languagePrompts.getPlanningSystemPrompt(languageCode)
       });
 
       const backCover = response.text.trim();
       
       if (!backCover || backCover.length < 50) {
         throw new Error('Generated back cover is too short or empty');
+      }
+
+      // Validate language output
+      const languageValidation = this.languageManager.validateLanguageOutput(backCover, languageCode);
+      if (!languageValidation.isValid) {
+        console.warn(`PlanningAgent: Language validation failed for back cover in ${languageCode}`, languageValidation.warnings);
       }
 
       return backCover;
@@ -429,23 +450,53 @@ export class PlanningAgent {
     settings: BookSettings
   ): Promise<string> {
     try {
-      const prompt = createRefinementPrompt({
-        userPrompt: refinementRequest,
-        settings,
-        previousContext: currentBackCover
-      });
+      const languageCode = settings.language || 'en';
+      
+      // Create language-aware refinement prompt
+      const basePrompt = `Refine the following back cover based on the user's feedback:
+
+CURRENT BACK COVER:
+${currentBackCover}
+
+USER FEEDBACK:
+${refinementRequest}
+
+BOOK DETAILS:
+- Genre: ${settings.genre}
+- Target Audience: ${settings.targetAudience}
+- Tone: ${settings.tone}
+
+REFINEMENT INSTRUCTIONS:
+1. Address the specific feedback provided by the user
+2. Maintain the compelling nature of the back cover
+3. Keep the same genre and tone
+4. Ensure the refined version is still 150-300 words
+5. Preserve what's working well while improving what the user requested
+
+Generate an improved back cover that incorporates the user's feedback while maintaining quality and appeal.`;
+
+      const languageAdditions = this.languageManager.getContentPromptAdditions(languageCode, settings.genre);
+      const prompt = basePrompt + languageAdditions;
+      
+      const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, this.config.temperature);
 
       const response = await generateAIText(prompt, {
         model: this.config.model,
-        temperature: this.config.temperature,
+        temperature: adjustedTemperature,
         maxTokens: this.config.maxTokens,
-        system: 'You are a professional editor helping refine book storylines and back cover descriptions.'
+        system: this.languagePrompts.getPlanningSystemPrompt(languageCode)
       });
 
       const refinedBackCover = response.text.trim();
       
       if (!refinedBackCover || refinedBackCover.length < 50) {
         throw new Error('Failed to refine back cover content');
+      }
+
+      // Validate language output
+      const languageValidation = this.languageManager.validateLanguageOutput(refinedBackCover, languageCode);
+      if (!languageValidation.isValid) {
+        console.warn(`PlanningAgent: Language validation failed for refined back cover in ${languageCode}`, languageValidation.warnings);
       }
 
       return refinedBackCover;
@@ -529,17 +580,23 @@ Respond in JSON format with the following structure:
     settings: BookSettings
   ): Promise<BookOutline> {
     try {
-      const prompt = createOutlinePrompt({
+      const languageCode = settings.language || 'en';
+      const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, 0.6);
+      
+      const basePrompt = createOutlinePrompt({
         userPrompt,
         settings,
         previousContext: backCover
       });
+      
+      const languageAdditions = this.languageManager.getContentPromptAdditions(languageCode, settings.genre);
+      const prompt = basePrompt + languageAdditions;
 
       const response = await generateAIText(prompt, {
         model: this.config.model,
-        temperature: 0.6,
+        temperature: adjustedTemperature,
         maxTokens: 6000,
-        system: 'You are a professional book editor and story architect. Create detailed, structured outlines that maintain narrative consistency and pacing. Always respond with valid JSON only.'
+        system: this.languagePrompts.getPlanningSystemPrompt(languageCode)
       });
 
       const outlineData = this.parseJsonResponse(response.text);
@@ -561,17 +618,23 @@ Respond in JSON format with the following structure:
     research: ComprehensiveResearch
   ): Promise<BookOutline> {
     try {
-      const prompt = createOutlinePrompt({
+      const languageCode = settings.language || 'en';
+      const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, 0.6);
+      
+      const basePrompt = createOutlinePrompt({
         userPrompt,
         settings,
         previousContext: backCover
       });
+      
+      const languageAdditions = this.languageManager.getContentPromptAdditions(languageCode, settings.genre);
+      const prompt = basePrompt + languageAdditions;
 
       const response = await generateAIText(prompt, {
         model: this.config.model,
-        temperature: 0.6,
+        temperature: adjustedTemperature,
         maxTokens: 6000,
-        system: 'You are a professional book editor and story architect. Create detailed, structured outlines that maintain narrative consistency and pacing. Always respond with valid JSON only.'
+        system: this.languagePrompts.getPlanningSystemPrompt(languageCode)
       });
 
       const outlineData = this.parseJsonResponse(response.text);

@@ -1,6 +1,8 @@
 import { generateAIText } from '@/lib/openai';
 import type { BookSettings } from '@/types';
 import type { TransitionStyle, SectionType } from '../planning/genre-structure';
+import { LanguageManager } from '../language/language-utils';
+import { LanguagePrompts } from '../language/language-prompts';
 
 export interface TransitionContext {
   // Section information
@@ -82,6 +84,8 @@ export class SectionTransitionAgent {
     temperature: number;
     maxTokens: number;
   };
+  private languageManager: LanguageManager;
+  private languagePrompts: LanguagePrompts;
   
   constructor(config = {
     model: 'gpt-4o',
@@ -89,14 +93,18 @@ export class SectionTransitionAgent {
     maxTokens: 2000
   }) {
     this.config = config;
+    this.languageManager = LanguageManager.getInstance();
+    this.languagePrompts = LanguagePrompts.getInstance();
   }
   
   /**
    * Generate a smooth transition between two sections
    */
   async generateTransition(context: TransitionContext): Promise<TransitionResult> {
+    const languageCode = context.bookSettings.language || 'en';
+    
     try {
-      console.log(`🔄 Generating ${context.transitionType.type} transition for Chapter ${context.chapterNumber}`);
+      console.log(`🔄 Generating ${context.transitionType.type} transition for Chapter ${context.chapterNumber} in ${languageCode}`);
       
       // Analyze the voice consistency first
       const voiceAnalysis = await this.analyzeVoiceConsistency(context);
@@ -148,6 +156,12 @@ export class SectionTransitionAgent {
           break;
       }
       
+      // Language validation
+      const languageValidation = this.languageManager.validateLanguageOutput(transitionText, languageCode);
+      if (!languageValidation.isValid) {
+        console.warn(`SectionTransitionAgent: Language validation failed for ${languageCode}`, languageValidation.warnings);
+      }
+      
       // Assess quality
       const qualityScore = await this.assessTransitionQuality(transitionText, context);
       
@@ -188,7 +202,10 @@ export class SectionTransitionAgent {
    * Analyze voice consistency based on previous content
    */
   async analyzeVoiceConsistency(context: TransitionContext): Promise<VoiceAnalysis> {
-    const prompt = `Analyze the narrative voice and style of this text excerpt:
+    const languageCode = context.bookSettings.language || 'en';
+    const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, 0.3);
+    
+    const basePrompt = `Analyze the narrative voice and style of this text excerpt:
 
 TEXT EXCERPT:
 ${context.previousSection.content.slice(-1000)} // Last 1000 characters
@@ -233,11 +250,14 @@ Respond in JSON format:
   }
 }`;
 
+    const languageAdditions = this.languageManager.getContentPromptAdditions(languageCode, context.bookSettings.genre);
+    const prompt = basePrompt + languageAdditions;
+
     const response = await generateAIText(prompt, {
       model: this.config.model,
-      temperature: 0.3,
+      temperature: adjustedTemperature,
       maxTokens: 1500,
-      system: 'You are a professional literary editor analyzing narrative voice consistency. Respond with valid JSON only.'
+      system: this.languagePrompts.getWritingSystemPrompt(languageCode) + '\n\nYou are a professional literary editor analyzing narrative voice consistency. Respond with valid JSON only.'
     });
     
     try {
@@ -268,7 +288,10 @@ Respond in JSON format:
     context: TransitionContext,
     voiceAnalysis: VoiceAnalysis
   ): Promise<{ text: string; continuity: any }> {
-    const prompt = `Create a scene break transition that smoothly moves from one section to another.
+    const languageCode = context.bookSettings.language || 'en';
+    const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, 0.7);
+    
+    const basePrompt = `Create a scene break transition that smoothly moves from one section to another.
 
 PREVIOUS SECTION ENDING:
 ${context.previousSection.lastSentence}
@@ -305,11 +328,14 @@ The scene break should be ${context.transitionLength} in length.
 
 WRITE THE SCENE BREAK TRANSITION:`;
 
+    const languageAdditions = this.languageManager.getContentPromptAdditions(languageCode, context.bookSettings.genre);
+    const prompt = basePrompt + languageAdditions;
+
     const response = await generateAIText(prompt, {
       model: this.config.model,
-      temperature: 0.7,
+      temperature: adjustedTemperature,
       maxTokens: 1000,
-      system: `You are a professional novelist writing a scene break transition. Match the established voice and style exactly. Write in ${voiceAnalysis.detectedVoice.perspective} perspective, ${voiceAnalysis.detectedVoice.tense} tense.`
+      system: this.languagePrompts.getWritingSystemPrompt(languageCode) + `\n\nYou are a professional novelist writing a scene break transition. Match the established voice and style exactly. Write in ${voiceAnalysis.detectedVoice.perspective} perspective, ${voiceAnalysis.detectedVoice.tense} tense.`
     });
     
     return {
@@ -330,7 +356,10 @@ WRITE THE SCENE BREAK TRANSITION:`;
     context: TransitionContext,
     voiceAnalysis: VoiceAnalysis
   ): Promise<{ text: string; continuity: any }> {
-    const prompt = `Create a bridge paragraph that smoothly connects two sections within the same scene.
+    const languageCode = context.bookSettings.language || 'en';
+    const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, 0.7);
+    
+    const basePrompt = `Create a bridge paragraph that smoothly connects two sections within the same scene.
 
 PREVIOUS SECTION ENDING:
 ${context.previousSection.lastSentence}
@@ -361,11 +390,14 @@ The bridge should be ${context.transitionLength} in length.
 
 WRITE THE BRIDGE PARAGRAPH:`;
 
+    const languageAdditions = this.languageManager.getContentPromptAdditions(languageCode, context.bookSettings.genre);
+    const prompt = basePrompt + languageAdditions;
+
     const response = await generateAIText(prompt, {
       model: this.config.model,
-      temperature: 0.7,
+      temperature: adjustedTemperature,
       maxTokens: 800,
-      system: `You are a professional novelist writing a bridge paragraph. Match the established voice and style exactly. Write in ${voiceAnalysis.detectedVoice.perspective} perspective, ${voiceAnalysis.detectedVoice.tense} tense.`
+      system: this.languagePrompts.getWritingSystemPrompt(languageCode) + `\n\nYou are a professional novelist writing a bridge paragraph. Match the established voice and style exactly. Write in ${voiceAnalysis.detectedVoice.perspective} perspective, ${voiceAnalysis.detectedVoice.tense} tense.`
     });
     
     return {
@@ -386,7 +418,10 @@ WRITE THE BRIDGE PARAGRAPH:`;
     context: TransitionContext,
     voiceAnalysis: VoiceAnalysis
   ): Promise<{ text: string; continuity: any }> {
-    const prompt = `Create a time jump transition that moves the story forward in time.
+    const languageCode = context.bookSettings.language || 'en';
+    const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, 0.7);
+    
+    const basePrompt = `Create a time jump transition that moves the story forward in time.
 
 PREVIOUS SECTION ENDING:
 ${context.previousSection.lastSentence}
@@ -417,11 +452,14 @@ The time jump should be ${context.transitionLength} in length.
 
 WRITE THE TIME JUMP TRANSITION:`;
 
+    const languageAdditions = this.languageManager.getContentPromptAdditions(languageCode, context.bookSettings.genre);
+    const prompt = basePrompt + languageAdditions;
+
     const response = await generateAIText(prompt, {
       model: this.config.model,
-      temperature: 0.7,
+      temperature: adjustedTemperature,
       maxTokens: 900,
-      system: `You are a professional novelist writing a time jump transition. Match the established voice and style exactly. Write in ${voiceAnalysis.detectedVoice.perspective} perspective, ${voiceAnalysis.detectedVoice.tense} tense.`
+      system: this.languagePrompts.getWritingSystemPrompt(languageCode) + `\n\nYou are a professional novelist writing a time jump transition. Match the established voice and style exactly. Write in ${voiceAnalysis.detectedVoice.perspective} perspective, ${voiceAnalysis.detectedVoice.tense} tense.`
     });
     
     return {
@@ -442,7 +480,10 @@ WRITE THE TIME JUMP TRANSITION:`;
     context: TransitionContext,
     voiceAnalysis: VoiceAnalysis
   ): Promise<{ text: string; continuity: any }> {
-    const prompt = `Create a perspective shift transition that changes the point of view character.
+    const languageCode = context.bookSettings.language || 'en';
+    const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, 0.7);
+    
+    const basePrompt = `Create a perspective shift transition that changes the point of view character.
 
 PREVIOUS SECTION CONTEXT:
 - Main characters: ${context.previousSection.mainCharacters.join(', ')}
@@ -475,11 +516,14 @@ The perspective shift should be ${context.transitionLength} in length.
 
 WRITE THE PERSPECTIVE SHIFT TRANSITION:`;
 
+    const languageAdditions = this.languageManager.getContentPromptAdditions(languageCode, context.bookSettings.genre);
+    const prompt = basePrompt + languageAdditions;
+
     const response = await generateAIText(prompt, {
       model: this.config.model,
-      temperature: 0.7,
+      temperature: adjustedTemperature,
       maxTokens: 900,
-      system: `You are a professional novelist writing a perspective shift. Match the established voice and style exactly. Write in ${voiceAnalysis.detectedVoice.perspective} perspective, ${voiceAnalysis.detectedVoice.tense} tense.`
+      system: this.languagePrompts.getWritingSystemPrompt(languageCode) + `\n\nYou are a professional novelist writing a perspective shift. Match the established voice and style exactly. Write in ${voiceAnalysis.detectedVoice.perspective} perspective, ${voiceAnalysis.detectedVoice.tense} tense.`
     });
     
     return {
@@ -500,7 +544,10 @@ WRITE THE PERSPECTIVE SHIFT TRANSITION:`;
     context: TransitionContext,
     voiceAnalysis: VoiceAnalysis
   ): Promise<{ text: string; continuity: any }> {
-    const prompt = `Create an emotional bridge that connects two different emotional states.
+    const languageCode = context.bookSettings.language || 'en';
+    const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, 0.8);
+    
+    const basePrompt = `Create an emotional bridge that connects two different emotional states.
 
 EMOTIONAL TRANSITION:
 - From: ${context.previousSection.emotionalBeat}
@@ -529,11 +576,14 @@ The emotional bridge should be ${context.transitionLength} in length.
 
 WRITE THE EMOTIONAL BRIDGE TRANSITION:`;
 
+    const languageAdditions = this.languageManager.getContentPromptAdditions(languageCode, context.bookSettings.genre);
+    const prompt = basePrompt + languageAdditions;
+
     const response = await generateAIText(prompt, {
       model: this.config.model,
-      temperature: 0.8,
+      temperature: adjustedTemperature,
       maxTokens: 800,
-      system: `You are a professional novelist writing an emotional bridge. Match the established voice and style exactly. Write in ${voiceAnalysis.detectedVoice.perspective} perspective, ${voiceAnalysis.detectedVoice.tense} tense.`
+      system: this.languagePrompts.getWritingSystemPrompt(languageCode) + `\n\nYou are a professional novelist writing an emotional bridge. Match the established voice and style exactly. Write in ${voiceAnalysis.detectedVoice.perspective} perspective, ${voiceAnalysis.detectedVoice.tense} tense.`
     });
     
     return {
@@ -554,7 +604,10 @@ WRITE THE EMOTIONAL BRIDGE TRANSITION:`;
     context: TransitionContext,
     voiceAnalysis: VoiceAnalysis
   ): Promise<{ text: string; continuity: any }> {
-    const prompt = `Create a smooth transition between two sections of a story.
+    const languageCode = context.bookSettings.language || 'en';
+    const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, 0.7);
+    
+    const basePrompt = `Create a smooth transition between two sections of a story.
 
 PREVIOUS SECTION:
 - Ending: ${context.previousSection.lastSentence}
@@ -576,11 +629,14 @@ Create a transition that maintains narrative flow and voice consistency.
 
 WRITE THE TRANSITION:`;
 
+    const languageAdditions = this.languageManager.getContentPromptAdditions(languageCode, context.bookSettings.genre);
+    const prompt = basePrompt + languageAdditions;
+
     const response = await generateAIText(prompt, {
       model: this.config.model,
-      temperature: 0.7,
+      temperature: adjustedTemperature,
       maxTokens: 600,
-      system: `You are a professional novelist. Match the established voice and style exactly. Write in ${voiceAnalysis.detectedVoice.perspective} perspective, ${voiceAnalysis.detectedVoice.tense} tense.`
+      system: this.languagePrompts.getWritingSystemPrompt(languageCode) + `\n\nYou are a professional novelist. Match the established voice and style exactly. Write in ${voiceAnalysis.detectedVoice.perspective} perspective, ${voiceAnalysis.detectedVoice.tense} tense.`
     });
     
     return {
@@ -625,6 +681,7 @@ WRITE THE TRANSITION:`;
    * Generate a simple fallback transition
    */
   private generateFallbackTransition(context: TransitionContext): string {
+    const languageCode = context.bookSettings.language || 'en';
     const templates = {
       'scene-break': `\n\n* * *\n\n`,
       'bridge-paragraph': `Meanwhile, `,
@@ -640,6 +697,9 @@ WRITE THE TRANSITION:`;
    * Extract narrative voice from a text sample
    */
   async extractNarrativeVoice(textSample: string, settings: BookSettings): Promise<NarrativeVoice> {
+    const languageCode = settings.language || 'en';
+    const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, 0.3);
+    
     const prompt = `Analyze this text sample and determine the narrative voice characteristics:
 
 TEXT SAMPLE:
@@ -668,9 +728,9 @@ Respond in JSON format:
     try {
       const response = await generateAIText(prompt, {
         model: this.config.model,
-        temperature: 0.3,
+        temperature: adjustedTemperature,
         maxTokens: 800,
-        system: 'You are a literary editor analyzing narrative voice. Respond with valid JSON only.'
+        system: this.languagePrompts.getWritingSystemPrompt(languageCode) + '\n\nYou are a literary editor analyzing narrative voice. Respond with valid JSON only.'
       });
       
       const analysis = JSON.parse(response.text);
