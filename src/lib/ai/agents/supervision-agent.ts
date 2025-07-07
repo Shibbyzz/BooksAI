@@ -285,8 +285,22 @@ Respond in JSON format:
         throw new Error('No AI review content received');
       }
 
+      // Clean markdown formatting before parsing JSON
+      let cleanContent = content_text.trim();
+      
+      // Remove markdown code blocks if present
+      if (cleanContent.startsWith('```json')) {
+        cleanContent = cleanContent.replace(/^```json\s*/, '').replace(/```\s*$/, '');
+      } else if (cleanContent.startsWith('```')) {
+        const firstNewline = cleanContent.indexOf('\n');
+        const lastBackticks = cleanContent.lastIndexOf('```');
+        if (firstNewline !== -1 && lastBackticks > firstNewline) {
+          cleanContent = cleanContent.substring(firstNewline + 1, lastBackticks).trim();
+        }
+      }
+
       // Parse AI response
-      const aiReview = JSON.parse(content_text);
+      const aiReview = JSON.parse(cleanContent);
       
       return {
         overallScore: aiReview.overallScore || 75,

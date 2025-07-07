@@ -1,6 +1,8 @@
 import { generateAIText } from '@/lib/openai';
 import type { BookSettings } from '@/types';
 import { ProseValidator, type ProseValidation, type ProseWarning } from '@/lib/proseValidator';
+import { LanguageManager } from '../language/language-utils';
+import { LanguagePrompts } from '../language/language-prompts';
 
 export interface WritingAgentConfig {
   model: string;
@@ -25,6 +27,8 @@ export interface SectionContext {
   sectionPurpose?: string;
   sceneMood?: string;
   emotionalBeat?: string;
+  // NEW: Explicit word target for this section
+  wordTarget?: number;
 }
 
 export interface SectionGeneration {
@@ -38,25 +42,33 @@ export interface SectionGeneration {
 
 export class WritingAgent {
   private config: WritingAgentConfig;
+  private languageManager: LanguageManager;
+  private languagePrompts: LanguagePrompts;
 
   constructor(config: WritingAgentConfig) {
     this.config = config;
+    this.languageManager = LanguageManager.getInstance();
+    this.languagePrompts = LanguagePrompts.getInstance();
   }
 
   async generateSection(context: SectionContext): Promise<SectionGeneration> {
     try {
-      const targetWords = context.settings.wordCount || 1000;
+      const targetWords = context.wordTarget || 1000;
+      const languageCode = context.settings.language || 'en';
       
-      // DEBUG: Log the word target to identify where massive numbers come from
-      console.log(`📝 WritingAgent: Generating section with ${targetWords} words target`);
+      // DEBUG: Log the word target and language
+      console.log(`📝 WritingAgent: Generating section with ${targetWords} words target in ${languageCode}`);
       
       const prompt = this.buildSectionPrompt(context);
       
+      // Get language-adjusted temperature
+      const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, this.config.temperature);
+      
       const response = await generateAIText(prompt, {
         model: this.config.model,
-        temperature: this.config.temperature,
+        temperature: adjustedTemperature,
         maxTokens: this.config.maxTokens,
-        system: this.getSystemPrompt()
+        system: this.getSystemPrompt(languageCode)
       });
 
       if (!response.text) {
@@ -89,9 +101,9 @@ export class WritingAgent {
             
             const retryResponse = await generateAIText(retryPrompt, {
               model: this.config.model,
-              temperature: this.config.temperature * 0.9, // Slightly lower temperature for retry
+              temperature: adjustedTemperature * 0.9, // Slightly lower temperature for retry
               maxTokens: this.config.maxTokens,
-              system: this.getSystemPrompt()
+              system: this.getSystemPrompt(languageCode)
             });
             
             if (retryResponse.text) {
@@ -111,6 +123,19 @@ export class WritingAgent {
       const proseValidation = ProseValidator.validateProse(finalContent);
       if (!proseValidation.isValid) {
         warnings.push(...proseValidation.warnings.map(w => w.message));
+      }
+
+      // NEW: Validate language output
+      const languageValidation = this.languageManager.validateLanguageOutput(finalContent, languageCode);
+      if (!languageValidation.isValid) {
+        warnings.push(...languageValidation.warnings);
+        console.warn(`WritingAgent: Language validation failed for ${languageCode}`, languageValidation.warnings);
+      }
+
+      // Log language quality expectations
+      const qualityExpectations = this.languageManager.getQualityExpectations(languageCode);
+      if (qualityExpectations.warnings.length > 0) {
+        console.log(`WritingAgent: Language quality note for ${languageCode}:`, qualityExpectations.warnings);
       }
 
       return {
@@ -135,137 +160,17 @@ export class WritingAgent {
 
 
 
-  private getSystemPrompt(): string {
-    return `You are a professional book writing AI. Your role is to write engaging, high-quality fiction that captivates readers.
-
-WRITING GUIDELINES:
-- Write in a compelling, immersive style that draws readers in
-- Show, don't tell - use vivid descriptions and dialogue
-- Maintain consistent character voices and personalities
-- Create natural, flowing narrative that moves the story forward
-- Include sensory details and emotional depth
-- Write in third person unless specified otherwise
-- Ensure proper pacing - balance action, dialogue, and description
-- Use strong, specific verbs and precise language
-- Create smooth transitions between scenes and ideas
-
-CONTENT REQUIREMENTS:
-- CRITICAL: Hit the specified word count target (within 10-20% range)
-- Generate content that matches the target word count specified in the prompt
-- Maintain consistency with the book's genre, tone, and style
-- Follow the chapter outline and story progression
-- Include character development and plot advancement
-- End sections with natural stopping points or compelling hooks
-
-WORD COUNT TARGETING:
-- Always aim for the specific word count requested in the prompt
-- Use the word count guidance provided to adjust pacing and detail level
-- If target is 500 words: Focus on a single impactful scene
-- If target is 800-1000 words: Develop one main scene with rich detail
-- If target is 1200+ words: Include multiple scenes or extensive development
-
-FORMATTING:
-- Use proper paragraph breaks for readability (every 100-200 words)
-- Include dialogue with proper formatting
-- Vary sentence length and structure for engaging rhythm
-- No chapter titles or section headers in the content
-- Focus on pure narrative prose
-- Avoid meta-commentary or author notes
-
-Remember: Meeting the word count target is crucial for proper book structure and pacing.`;
+  private getSystemPrompt(languageCode: string = 'en'): string {
+    return this.languagePrompts.getWritingSystemPrompt(languageCode);
   }
 
   private buildSectionPrompt(context: SectionContext): string {
-    const {
-      bookTitle,
-      bookPrompt,
-      backCover,
-      chapterTitle,
-      chapterSummary,
-      sectionNumber,
-      totalSections,
-      previousSections = [],
-      characters = [],
-      settings,
-      // NEW: Optional emotional and scene guidance
-      sectionPurpose,
-      sceneMood,
-      emotionalBeat
-    } = context;
-
-    // Calculate target word count for this section (should already be validated)
-    const targetWords = settings.wordCount || 1000;
-    const wordGuidance = this.getWordCountGuidance(targetWords);
-
-    // DEBUG: Log the word target being requested in WritingAgent
-    console.log(`🎯 WritingAgent building prompt for ${targetWords} words`);
+    const languageCode = context.settings.language || 'en';
     
-    let prompt = `Write section ${sectionNumber} of ${totalSections} for the chapter "${chapterTitle}".
-
-BOOK DETAILS:
-Title: "${bookTitle}"
-Genre: ${settings.genre}
-Target Audience: ${settings.targetAudience}
-Tone: ${settings.tone}
-
-STORY CONTEXT:
-Original Prompt: ${bookPrompt}
-Back Cover Summary: ${backCover}
-
-CHAPTER CONTEXT:
-Chapter: "${chapterTitle}"
-Chapter Summary: ${chapterSummary}
-
-WORD COUNT TARGET: ${targetWords} words
-${wordGuidance}
-
-SECTION REQUIREMENTS:
-- This is section ${sectionNumber} of ${totalSections} in this chapter
-- Write approximately ${targetWords} words (${Math.floor(targetWords * 0.8)}-${Math.floor(targetWords * 1.2)} words acceptable range)
-- ${sectionNumber === 1 ? 'Start the chapter with an engaging opening that draws readers in' : 
-  sectionNumber === totalSections ? 'End the chapter with a satisfying conclusion or compelling cliffhanger' : 
-  'Continue the story naturally from the previous section, building tension and developing the plot'}
-`;
-
-    // NEW: Add emotional and scene guidance if provided
-    if (sectionPurpose) {
-      prompt += `\nSECTION PURPOSE: ${sectionPurpose}`;
-    }
+    // DEBUG: Log the word target and language being requested
+    console.log(`🎯 WritingAgent building prompt for ${context.wordTarget || 1000} words in ${languageCode}`);
     
-    if (sceneMood) {
-      prompt += `\nSCENE MOOD: ${sceneMood}`;
-    }
-    
-    if (emotionalBeat) {
-      prompt += `\nEMOTIONAL BEAT: ${emotionalBeat}`;
-    }
-
-    if (characters.length > 0) {
-      prompt += `\nKEY CHARACTERS: ${characters.join(', ')}`;
-    }
-
-    if (previousSections.length > 0) {
-      // Limit context to avoid OpenAI response limits
-      const contextLimit = previousSections.length > 1 ? 200 : 300;
-      prompt += `\nPREVIOUS SECTIONS CONTEXT:
-${previousSections.map((section, i) => `Section ${i + (sectionNumber - previousSections.length)}: ...${section.substring(Math.max(0, section.length - contextLimit))}`).join('\n')}`;
-    }
-
-    prompt += `\n\nGenerate engaging, high-quality prose that:
-1. Continues the story naturally and maintains the ${settings.tone} tone
-2. Reaches approximately ${targetWords} words in length
-3. Includes vivid descriptions, compelling dialogue, and character development
-4. ${sectionNumber === totalSections ? 'Provides a strong chapter ending' : 'Sets up naturally for the next section'}
-5. Maintains consistency with the established story world and characters`;
-
-    // NEW: Add emotional guidance to prose requirements
-    if (sceneMood || emotionalBeat) {
-      prompt += `\n6. Captures the specified mood and emotional beats to enhance reader engagement`;
-    }
-
-    prompt += `\n\nFocus on creating immersive, page-turning content that keeps readers engaged. Use proper paragraph breaks and varied sentence structures for optimal readability.`;
-
-    return prompt;
+    return this.languagePrompts.getWritingContentPrompt(languageCode, context);
   }
 
   /**

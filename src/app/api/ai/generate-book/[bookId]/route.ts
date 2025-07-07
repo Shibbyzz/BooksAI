@@ -1,8 +1,13 @@
 import { NextRequest } from 'next/server';
-import { BookGenerationOrchestrator } from '@/lib/ai/orchestrator';
+import { BookGenerationOrchestrator } from '@/lib/ai/orchestrator-v2';
 import { prisma } from '@/lib/prisma';
 import { GenerationStep } from '@prisma/client';
-import { progressTracker } from '@/lib/progress-tracker'; // Add Redis progress tracker
+import { progressTracker } from '@/lib/progress-tracker';
+import { 
+  checkSubscriptionAccess, 
+  createSubscriptionErrorResponse,
+  trackSuccessfulGeneration 
+} from '@/lib/subscription/subscription-middleware';
 
 export async function POST(
   request: NextRequest,
@@ -24,6 +29,25 @@ export async function POST(
 
     if (!book.settings) {
       return Response.json({ error: 'Book settings not found' }, { status: 400 });
+    }
+
+    // Check subscription limits before generation
+    const subscriptionCheck = await checkSubscriptionAccess(request, {
+      wordCount: book.settings.wordCount,
+      requiresPremium: false, // Basic generation available to all tiers
+      featureName: 'Book Generation'
+    });
+
+    if (!subscriptionCheck.success) {
+      return createSubscriptionErrorResponse(subscriptionCheck);
+    }
+
+    const user = subscriptionCheck.user!;
+    console.log(`✅ Subscription check passed for user ${user.id} (${user.subscriptionTier})`);
+
+    // Verify book ownership
+    if (book.userId !== user.id) {
+      return Response.json({ error: 'Access denied' }, { status: 403 });
     }
 
     // Check if already generating
@@ -49,7 +73,7 @@ export async function POST(
     
     // Start the background generation process
     setImmediate(() => {
-      generateBookInBackground(bookId, book.prompt, book.settings);
+      generateBookInBackground(bookId, book.prompt, book.settings, user.id);
     });
 
     return Response.json({ 
@@ -83,22 +107,31 @@ export async function POST(
 }
 
 // Background generation function
-async function generateBookInBackground(bookId: string, prompt: string, settings: any) {
+async function generateBookInBackground(bookId: string, prompt: string, settings: any, userId: string) {
   try {
     console.log(`Background generation starting for book ${bookId}...`);
 
-    // Initialize the enhanced orchestrator with all quality-focused agents
+    // Get user subscription tier
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { subscriptionTier: true }
+    });
+
+    const userTier = user?.subscriptionTier || 'FREE';
+    console.log(`🎯 Initializing orchestrator for ${userTier} tier user`);
+
+    // Initialize the orchestrator with tier-based configuration
     const orchestrator = new BookGenerationOrchestrator({
       researchAgent: {
         model: 'gpt-3.5-turbo',
         temperature: 0.3
       },
       chiefEditorAgent: {
-        model: 'gpt-4o',
+        model: userTier === 'PREMIUM' ? 'gpt-4o' : 'gpt-4o-mini',
         temperature: 0.8  
       },
       continuityAgent: {
-        model: 'gpt-4o',
+        model: userTier === 'PREMIUM' ? 'gpt-4o' : 'gpt-4o-mini',
         temperature: 0.0
       },
       proofreaderAgent: {
@@ -113,7 +146,7 @@ async function generateBookInBackground(bookId: string, prompt: string, settings
         model: 'gpt-4o-mini', 
         temperature: 0.8
       }
-    });
+    }, userTier);
 
     // Progress callback to update database
     const updateProgress = async (progress: number, status: string) => {
@@ -240,6 +273,10 @@ async function generateBookInBackground(bookId: string, prompt: string, settings
        }
      });
 
+     // Track successful generation for subscription limits
+     const totalWords = result.chapters.reduce((sum: number, ch: any) => sum + ch.wordCount, 0);
+     await trackSuccessfulGeneration(userId, totalWords, bookId);
+
      console.log(`Enhanced book generation completed successfully for book ${bookId}`);
 
      return Response.json({ 
@@ -347,7 +384,7 @@ export async function GET(
 
     // Calculate progress based on enhanced workflow stages
     let progress = 0;
-    let currentStep = book.generationStep || 'PROMPT';
+    const currentStep = book.generationStep || 'PROMPT';
     let statusMessage = 'Preparing...';
     
     // Get chapter counts for progress calculation
@@ -416,10 +453,11 @@ export async function GET(
       completedChapters,
       chapters: book.chapters.map(ch => ({
         id: ch.id,
-        number: ch.chapterNumber,
+        chapterNumber: ch.chapterNumber,
         title: ch.title,
         status: ch.status,
-        sectionCount: ch.sections.length
+        sectionsComplete: ch.sections.filter(s => s.status === 'COMPLETE').length,
+        sectionsTotal: ch.sections.length
       })),
       enhancedWorkflow: {
         researchPhase: currentStep === GenerationStep.OUTLINE && totalChapters === 0,

@@ -85,7 +85,7 @@ export async function GET(
       outline: book.outline,
       chapters: book.chapters.map(ch => ({
         id: ch.id,
-        number: ch.chapterNumber,
+        chapterNumber: ch.chapterNumber,
         title: ch.title,
         status: ch.status,
         sectionsCount: ch.sections.length

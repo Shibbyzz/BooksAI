@@ -247,7 +247,10 @@
       "updateFrequency": "Uppdateringar var några sekunder • Denna process kan ta 10-30 minuter",
       "redisUnavailable": "⚠️ Använder cachad framsteg (Redis tillfälligt otillgänglig)",
       "lastUpdated": "Senast uppdaterad: {time}"
-    }
+    },
+    "exportingBook": "Exporterar bok...",
+    "bookExportedSuccessfully": "Bok exporterad framgångsrikt!",
+    "exportFailed": "Kunde inte exportera bok. Försök igen."
   },
   "bookCreate": {
     "title": "Skapa ny bok",

@@ -197,7 +197,11 @@ export class ResearchAgent {
       }
       
       const parsed = JSON.parse(cleanContent);
-      return ResearchTopicsSchema.parse(parsed);
+      
+      // Transform capitalized keys to lowercase schema format
+      const transformedTopics = this.transformResearchTopicsFormat(parsed);
+      
+      return ResearchTopicsSchema.parse(transformedTopics);
     } catch (parseError) {
       console.error('Error parsing research topics:', parseError);
       console.error('Raw response:', response.text);
@@ -206,6 +210,53 @@ export class ResearchAgent {
       // Fallback to basic research topics
       return this.generateFallbackResearchTopics(settings);
     }
+  }
+
+  /**
+   * Transform AI response format to match schema expectations
+   */
+  private transformResearchTopicsFormat(parsed: any): ResearchTopics {
+    // Handle both capitalized keys and correct format
+    const mapping: { [key: string]: keyof ResearchTopics } = {
+      'DOMAIN KNOWLEDGE': 'domain',
+      'domain': 'domain',
+      'CHARACTER BACKGROUNDS': 'characters',
+      'characters': 'characters',
+      'SETTING DETAILS': 'settings',
+      'settings': 'settings',
+      'TECHNICAL ASPECTS': 'technical',
+      'technical': 'technical',
+      'CULTURAL CONTEXT': 'cultural',
+      'cultural': 'cultural'
+    };
+
+    const result: Partial<ResearchTopics> = {
+      domain: [],
+      characters: [],
+      settings: [],
+      technical: [],
+      cultural: []
+    };
+
+    // Transform each field from AI response
+    for (const [aiKey, schemaKey] of Object.entries(mapping)) {
+      if (parsed[aiKey]) {
+        if (Array.isArray(parsed[aiKey])) {
+          result[schemaKey] = parsed[aiKey];
+        } else if (typeof parsed[aiKey] === 'object') {
+          // Convert object format to array format
+          const item = {
+            topic: parsed[aiKey].topic || schemaKey,
+            priority: parsed[aiKey].Priority?.toLowerCase() || 'medium',
+            scope: parsed[aiKey].Scope?.toLowerCase() || 'broad',
+            context: parsed[aiKey]['Why it\'s important for the story'] || `Research for ${schemaKey}`
+          };
+          result[schemaKey] = [item];
+        }
+      }
+    }
+
+    return result as ResearchTopics;
   }
 
   /**
@@ -409,7 +460,7 @@ export class ResearchAgent {
    */
   private parseResearchResponse(responseText: string, topic: string): ResearchResult {
     // Remove markdown formatting
-    let cleanText = responseText
+    const cleanText = responseText
       .replace(/```[\s\S]*?```/g, '') // Remove code blocks
       .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold
       .replace(/\*(.*?)\*/g, '$1') // Remove italic

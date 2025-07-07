@@ -1,5 +1,7 @@
 import { generateAIText } from '@/lib/openai';
 import type { BookSettings } from '@/types';
+import { LanguageManager } from '../language/language-utils';
+import { LanguagePrompts } from '../language/language-prompts';
 
 export interface SpecializedWriterConfig {
   model: string;
@@ -23,6 +25,8 @@ export interface SceneContext {
   nextScenePreview?: string;
   researchContext?: string[];
   characterStates?: { [character: string]: string };
+  // NEW: BookSettings for language awareness
+  bookSettings: BookSettings;
   // NEW: Human-quality enhancement properties
   narrativeVoice?: any; // NarrativeVoice from human-quality-enhancer
   emotionalTone?: any; // EmotionalBeat from human-quality-enhancer
@@ -43,27 +47,25 @@ export interface SceneGeneration {
  */
 export class ActionSceneWriter {
   private config: SpecializedWriterConfig;
+  private languageManager: LanguageManager;
+  private languagePrompts: LanguagePrompts;
 
   constructor(config: SpecializedWriterConfig) {
     this.config = config;
+    this.languageManager = LanguageManager.getInstance();
+    this.languagePrompts = LanguagePrompts.getInstance();
   }
 
   async writeActionScene(context: SceneContext): Promise<SceneGeneration> {
+    const languageCode = context.bookSettings.language || 'en';
     const prompt = this.buildActionPrompt(context);
+    const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, 0.9);
     
     const response = await generateAIText(prompt, {
       model: this.config.model,
-      temperature: 0.9, // Higher temperature for dynamic action
+      temperature: adjustedTemperature,
       maxTokens: this.config.maxTokens,
-      system: `You are an expert action scene writer. Create intense, visceral scenes that:
-      - Use short, punchy sentences during high-intensity moments
-      - Include vivid sensory details (sounds, impacts, movements)
-      - Maintain clear spatial awareness and choreography
-      - Balance action with character emotion and stakes
-      - Create escalating tension that builds to the scene outcome
-      - Use strong, active verbs and minimize passive voice
-      - Include realistic consequences and physical limitations
-      - CRITICAL: Meet the exact word count target specified in the prompt`
+      system: this.getActionSystemPrompt(languageCode)
     });
 
     let content = response.text.trim();
@@ -79,9 +81,9 @@ export class ActionSceneWriter {
       try {
         const retryResponse = await generateAIText(retryPrompt, {
           model: this.config.model,
-          temperature: 0.8, // Slightly lower temperature for retry
+          temperature: adjustedTemperature * 0.9,
           maxTokens: this.config.maxTokens,
-          system: `You are an expert action writer. CRITICAL: You must meet the exact word count target specified in the prompt. Expand with vivid details and character reactions.`
+          system: this.getActionSystemPrompt(languageCode)
         });
         
         const retryContent = retryResponse.text.trim();
@@ -98,6 +100,12 @@ export class ActionSceneWriter {
       }
     }
 
+    // Language validation
+    const languageValidation = this.languageManager.validateLanguageOutput(content, languageCode);
+    if (!languageValidation.isValid) {
+      console.warn(`ActionWriter: Language validation failed for ${languageCode}`, languageValidation.warnings);
+    }
+
     return {
       content,
       wordCount,
@@ -107,11 +115,27 @@ export class ActionSceneWriter {
     };
   }
 
+  private getActionSystemPrompt(languageCode: string): string {
+    const basePrompt = `You are an expert action scene writer. Create intense, visceral scenes that:
+- Use short, punchy sentences during high-intensity moments
+- Include vivid sensory details (sounds, impacts, movements)
+- Maintain clear spatial awareness and choreography
+- Balance action with character emotion and stakes
+- Create escalating tension that builds to the scene outcome
+- Use strong, active verbs and minimize passive voice
+- Include realistic consequences and physical limitations
+- CRITICAL: Meet the exact word count target specified in the prompt`;
+
+    return this.languagePrompts.getWritingSystemPrompt(languageCode) + '\n\n' + basePrompt;
+  }
+
   private buildActionPrompt(context: SceneContext): string {
-    // DEBUG: Log the word target being requested
-    console.log(`🎯 ActionWriter building prompt for ${context.wordTarget} words`);
+    const languageCode = context.bookSettings.language || 'en';
     
-    return `Write an intense action scene of exactly ${context.wordTarget} words:
+    // DEBUG: Log the word target being requested
+    console.log(`🎯 ActionWriter building prompt for ${context.wordTarget} words in ${languageCode}`);
+    
+    const basePrompt = `Write an intense action scene of exactly ${context.wordTarget} words:
 
 CRITICAL WORD COUNT REQUIREMENT: 
 - Write approximately ${context.wordTarget} words (${Math.floor(context.wordTarget * 0.8)}-${Math.floor(context.wordTarget * 1.2)} words acceptable)
@@ -136,6 +160,9 @@ SCENE REQUIREMENTS:
 ${context.previousContent ? `PREVIOUS SCENE CONTEXT:\n...${context.previousContent.substring(Math.max(0, context.previousContent.length - 200))}\n` : ''}
 
 Write compelling action that puts readers in the middle of the intensity. Remember: aim for ${context.wordTarget} words.`;
+
+    const languageAdditions = this.languageManager.getContentPromptAdditions(languageCode, context.bookSettings.genre);
+    return basePrompt + languageAdditions;
   }
 
   private countWords(text: string): number {
@@ -144,31 +171,29 @@ Write compelling action that puts readers in the middle of the intensity. Rememb
 }
 
 /**
- * Dialogue Writer - Specialized for character conversations
+ * Dialogue Writer - Specialized for conversation-heavy scenes
  */
 export class DialogueWriter {
   private config: SpecializedWriterConfig;
+  private languageManager: LanguageManager;
+  private languagePrompts: LanguagePrompts;
 
   constructor(config: SpecializedWriterConfig) {
     this.config = config;
+    this.languageManager = LanguageManager.getInstance();
+    this.languagePrompts = LanguagePrompts.getInstance();
   }
 
   async writeDialogueScene(context: SceneContext): Promise<SceneGeneration> {
+    const languageCode = context.bookSettings.language || 'en';
     const prompt = this.buildDialoguePrompt(context);
+    const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, 0.8);
     
     const response = await generateAIText(prompt, {
       model: this.config.model,
-      temperature: 0.8,
+      temperature: adjustedTemperature,
       maxTokens: this.config.maxTokens,
-      system: `You are an expert dialogue writer. Create natural conversations that:
-      - Give each character a distinct voice and speech pattern
-      - Advance plot through conversation
-      - Reveal character through what they say and don't say
-      - Include subtext and hidden meanings
-      - Balance dialogue with action beats and description
-      - Use realistic interruptions, pauses, and overlaps
-      - Show character relationships through interaction dynamics
-      - CRITICAL: Meet the exact word count target specified in the prompt`
+      system: this.getDialogueSystemPrompt(languageCode)
     });
 
     let content = response.text.trim();
@@ -184,9 +209,9 @@ export class DialogueWriter {
       try {
         const retryResponse = await generateAIText(retryPrompt, {
           model: this.config.model,
-          temperature: 0.7,
+          temperature: adjustedTemperature * 0.9,
           maxTokens: this.config.maxTokens,
-          system: `You are an expert dialogue writer. CRITICAL: You must meet the exact word count target specified in the prompt. Expand with more character interaction and subtext.`
+          system: this.getDialogueSystemPrompt(languageCode)
         });
         
         const retryContent = retryResponse.text.trim();
@@ -203,6 +228,12 @@ export class DialogueWriter {
       }
     }
 
+    // Language validation
+    const languageValidation = this.languageManager.validateLanguageOutput(content, languageCode);
+    if (!languageValidation.isValid) {
+      console.warn(`DialogueWriter: Language validation failed for ${languageCode}`, languageValidation.warnings);
+    }
+
     return {
       content,
       wordCount,
@@ -212,11 +243,27 @@ export class DialogueWriter {
     };
   }
 
+  private getDialogueSystemPrompt(languageCode: string): string {
+    const basePrompt = `You are an expert dialogue writer. Create natural conversations that:
+- Give each character a distinct voice and speech pattern
+- Advance plot through conversation
+- Reveal character through what they say and don't say
+- Include subtext and hidden meanings
+- Balance dialogue with action beats and description
+- Use realistic interruptions, pauses, and overlaps
+- Show character relationships through interaction dynamics
+- CRITICAL: Meet the exact word count target specified in the prompt`;
+
+    return this.languagePrompts.getWritingSystemPrompt(languageCode) + '\n\n' + basePrompt;
+  }
+
   private buildDialoguePrompt(context: SceneContext): string {
-    // DEBUG: Log the word target being requested
-    console.log(`🎯 DialogueWriter building prompt for ${context.wordTarget} words`);
+    const languageCode = context.bookSettings.language || 'en';
     
-    return `Write a dialogue-driven scene of exactly ${context.wordTarget} words:
+    // DEBUG: Log the word target being requested
+    console.log(`🎯 DialogueWriter building prompt for ${context.wordTarget} words in ${languageCode}`);
+    
+    const basePrompt = `Write a dialogue-driven scene of exactly ${context.wordTarget} words:
 
 CRITICAL WORD COUNT REQUIREMENT: 
 - Write approximately ${context.wordTarget} words (${Math.floor(context.wordTarget * 0.8)}-${Math.floor(context.wordTarget * 1.2)} words acceptable)
@@ -241,6 +288,9 @@ DIALOGUE REQUIREMENTS:
 ${context.characterStates ? `CHARACTER STATES:\n${Object.entries(context.characterStates).map(([char, state]) => `${char}: ${state}`).join('\n')}\n` : ''}
 
 Write natural, engaging dialogue that feels authentic to these characters. Remember: aim for ${context.wordTarget} words.`;
+
+    const languageAdditions = this.languageManager.getContentPromptAdditions(languageCode, context.bookSettings.genre);
+    return basePrompt + languageAdditions;
   }
 
   private countWords(text: string): number {
@@ -249,31 +299,29 @@ Write natural, engaging dialogue that feels authentic to these characters. Remem
 }
 
 /**
- * Atmospheric Writer - Specialized for mood and setting description
+ * Atmospheric Writer - Specialized for descriptive, mood-setting scenes
  */
 export class AtmosphericWriter {
   private config: SpecializedWriterConfig;
+  private languageManager: LanguageManager;
+  private languagePrompts: LanguagePrompts;
 
   constructor(config: SpecializedWriterConfig) {
     this.config = config;
+    this.languageManager = LanguageManager.getInstance();
+    this.languagePrompts = LanguagePrompts.getInstance();
   }
 
   async writeAtmosphericScene(context: SceneContext): Promise<SceneGeneration> {
+    const languageCode = context.bookSettings.language || 'en';
     const prompt = this.buildAtmosphericPrompt(context);
+    const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, 0.7);
     
     const response = await generateAIText(prompt, {
       model: this.config.model,
-      temperature: 0.7,
+      temperature: adjustedTemperature,
       maxTokens: this.config.maxTokens,
-      system: `You are an expert atmospheric writer. Create immersive scenes that:
-      - Use all five senses to create vivid environments
-      - Match description to character's emotional state
-      - Create mood through setting and weather
-      - Include subtle details that enhance atmosphere
-      - Balance description with character interiority
-      - Use metaphor and symbolism when appropriate
-      - Create a sense of place that feels real and lived-in
-      - CRITICAL: Meet the exact word count target specified in the prompt`
+      system: this.getAtmosphericSystemPrompt(languageCode)
     });
 
     let content = response.text.trim();
@@ -289,9 +337,9 @@ export class AtmosphericWriter {
       try {
         const retryResponse = await generateAIText(retryPrompt, {
           model: this.config.model,
-          temperature: 0.6,
+          temperature: adjustedTemperature * 0.9,
           maxTokens: this.config.maxTokens,
-          system: `You are an expert atmospheric writer. CRITICAL: You must meet the exact word count target specified in the prompt. Expand with rich sensory details and atmosphere.`
+          system: this.getAtmosphericSystemPrompt(languageCode)
         });
         
         const retryContent = retryResponse.text.trim();
@@ -308,6 +356,12 @@ export class AtmosphericWriter {
       }
     }
 
+    // Language validation
+    const languageValidation = this.languageManager.validateLanguageOutput(content, languageCode);
+    if (!languageValidation.isValid) {
+      console.warn(`AtmosphericWriter: Language validation failed for ${languageCode}`, languageValidation.warnings);
+    }
+
     return {
       content,
       wordCount,
@@ -317,11 +371,27 @@ export class AtmosphericWriter {
     };
   }
 
+  private getAtmosphericSystemPrompt(languageCode: string): string {
+    const basePrompt = `You are an expert atmospheric writer. Create immersive scenes that:
+- Use all five senses to create vivid environments
+- Match description to character's emotional state
+- Create mood through setting and weather
+- Include subtle details that enhance atmosphere
+- Balance description with character interiority
+- Use metaphor and symbolism when appropriate
+- Create a sense of place that feels real and lived-in
+- CRITICAL: Meet the exact word count target specified in the prompt`;
+
+    return this.languagePrompts.getWritingSystemPrompt(languageCode) + '\n\n' + basePrompt;
+  }
+
   private buildAtmosphericPrompt(context: SceneContext): string {
-    // DEBUG: Log the word target being requested
-    console.log(`🎯 AtmosphericWriter building prompt for ${context.wordTarget} words`);
+    const languageCode = context.bookSettings.language || 'en';
     
-    return `Write an atmospheric scene of exactly ${context.wordTarget} words:
+    // DEBUG: Log the word target being requested
+    console.log(`🎯 AtmosphericWriter building prompt for ${context.wordTarget} words in ${languageCode}`);
+    
+    const basePrompt = `Write an atmospheric scene of exactly ${context.wordTarget} words:
 
 CRITICAL WORD COUNT REQUIREMENT: 
 - Write approximately ${context.wordTarget} words (${Math.floor(context.wordTarget * 0.8)}-${Math.floor(context.wordTarget * 1.2)} words acceptable)
@@ -345,6 +415,9 @@ ATMOSPHERIC REQUIREMENTS:
 ${context.researchContext ? `RESEARCH CONTEXT:\n${context.researchContext.join('\n')}\n` : ''}
 
 Create rich, immersive atmosphere that draws readers into the scene. Remember: aim for ${context.wordTarget} words.`;
+
+    const languageAdditions = this.languageManager.getContentPromptAdditions(languageCode, context.bookSettings.genre);
+    return basePrompt + languageAdditions;
   }
 
   private countWords(text: string): number {
@@ -353,31 +426,29 @@ Create rich, immersive atmosphere that draws readers into the scene. Remember: a
 }
 
 /**
- * Emotional Writer - Specialized for character development and internal scenes
+ * Emotional Writer - Specialized for character-driven, emotional scenes
  */
 export class EmotionalWriter {
   private config: SpecializedWriterConfig;
+  private languageManager: LanguageManager;
+  private languagePrompts: LanguagePrompts;
 
   constructor(config: SpecializedWriterConfig) {
     this.config = config;
+    this.languageManager = LanguageManager.getInstance();
+    this.languagePrompts = LanguagePrompts.getInstance();
   }
 
   async writeEmotionalScene(context: SceneContext): Promise<SceneGeneration> {
+    const languageCode = context.bookSettings.language || 'en';
     const prompt = this.buildEmotionalPrompt(context);
+    const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, 0.8);
     
     const response = await generateAIText(prompt, {
       model: this.config.model,
-      temperature: 0.8,
+      temperature: adjustedTemperature,
       maxTokens: this.config.maxTokens,
-      system: `You are an expert emotional writer. Create deeply felt scenes that:
-      - Show character's internal emotional journey
-      - Use physical sensations to convey emotions
-      - Create empathy and connection with readers
-      - Balance introspection with external action
-      - Show rather than tell emotional states
-      - Include subtle emotional shifts and realizations
-      - Connect emotions to character's deeper motivations
-      - CRITICAL: Meet the exact word count target specified in the prompt`
+      system: this.getEmotionalSystemPrompt(languageCode)
     });
 
     let content = response.text.trim();
@@ -393,9 +464,9 @@ export class EmotionalWriter {
       try {
         const retryResponse = await generateAIText(retryPrompt, {
           model: this.config.model,
-          temperature: 0.7,
+          temperature: adjustedTemperature * 0.9,
           maxTokens: this.config.maxTokens,
-          system: `You are an expert emotional writer. CRITICAL: You must meet the exact word count target specified in the prompt. Expand with deeper emotional exploration and character development.`
+          system: this.getEmotionalSystemPrompt(languageCode)
         });
         
         const retryContent = retryResponse.text.trim();
@@ -412,6 +483,12 @@ export class EmotionalWriter {
       }
     }
 
+    // Language validation
+    const languageValidation = this.languageManager.validateLanguageOutput(content, languageCode);
+    if (!languageValidation.isValid) {
+      console.warn(`EmotionalWriter: Language validation failed for ${languageCode}`, languageValidation.warnings);
+    }
+
     return {
       content,
       wordCount,
@@ -421,11 +498,27 @@ export class EmotionalWriter {
     };
   }
 
+  private getEmotionalSystemPrompt(languageCode: string): string {
+    const basePrompt = `You are an expert emotional writer. Create deeply felt scenes that:
+- Show character's internal emotional journey
+- Use physical sensations to convey emotions
+- Create empathy and connection with readers
+- Balance introspection with external action
+- Show rather than tell emotional states
+- Include subtle emotional shifts and realizations
+- Connect emotions to character's deeper motivations
+- CRITICAL: Meet the exact word count target specified in the prompt`;
+
+    return this.languagePrompts.getWritingSystemPrompt(languageCode) + '\n\n' + basePrompt;
+  }
+
   private buildEmotionalPrompt(context: SceneContext): string {
-    // DEBUG: Log the word target being requested
-    console.log(`🎯 EmotionalWriter building prompt for ${context.wordTarget} words`);
+    const languageCode = context.bookSettings.language || 'en';
     
-    return `Write an emotionally-driven scene of exactly ${context.wordTarget} words:
+    // DEBUG: Log the word target being requested
+    console.log(`🎯 EmotionalWriter building prompt for ${context.wordTarget} words in ${languageCode}`);
+    
+    const basePrompt = `Write an emotionally-driven scene of exactly ${context.wordTarget} words:
 
 CRITICAL WORD COUNT REQUIREMENT: 
 - Write approximately ${context.wordTarget} words (${Math.floor(context.wordTarget * 0.8)}-${Math.floor(context.wordTarget * 1.2)} words acceptable)
@@ -449,6 +542,9 @@ EMOTIONAL REQUIREMENTS:
 ${context.characterStates ? `CHARACTER STATE:\n${context.characterStates[context.characters[0]] || 'Current emotional state'}\n` : ''}
 
 Write a scene that creates deep emotional resonance with readers. Remember: aim for ${context.wordTarget} words.`;
+
+    const languageAdditions = this.languageManager.getContentPromptAdditions(languageCode, context.bookSettings.genre);
+    return basePrompt + languageAdditions;
   }
 
   private countWords(text: string): number {
@@ -473,8 +569,10 @@ export class WriterDirector {
   }
 
   async writeScene(context: SceneContext): Promise<SceneGeneration> {
+    const languageCode = context.bookSettings.language || 'en';
+    
     // DEBUG: Log the word target to track where massive numbers come from
-    console.log(`📝 WriterDirector: Processing ${context.sceneType} scene with ${context.wordTarget} words target`);
+    console.log(`📝 WriterDirector: Processing ${context.sceneType} scene with ${context.wordTarget} words target in ${languageCode}`);
     
     // Determine best writer based on scene type and context
     const sceneType = this.determineSceneType(context);
