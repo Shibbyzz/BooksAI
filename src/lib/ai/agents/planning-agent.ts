@@ -11,6 +11,7 @@ import type { ComprehensiveResearch } from '../validators/research';
 import type { BookStructurePlan, StoryBible, ChapterStructure } from './chief-editor-agent';
 import { LanguageManager } from '../language/language-utils';
 import { LanguagePrompts } from '../language/language-prompts';
+import { CharacterNameContinuityAgent } from '../services/CharacterNameContinuityAgent';
 
 // Zod schemas for validation
 const PlanningInputSchema = z.object({
@@ -146,6 +147,7 @@ export class PlanningAgent {
   private currentStepRetries: StepRetryCount[] = [];
   private languageManager: LanguageManager;
   private languagePrompts: LanguagePrompts;
+  private characterNameAgent: CharacterNameContinuityAgent;
 
   constructor(config?: Partial<PlanningAgentConfig>) {
     this.config = {
@@ -164,6 +166,7 @@ export class PlanningAgent {
     
     this.languageManager = LanguageManager.getInstance();
     this.languagePrompts = LanguagePrompts.getInstance();
+    this.characterNameAgent = new CharacterNameContinuityAgent();
     
     console.log('🎯 PlanningAgent initialized with:', {
       model: this.config.model,
@@ -188,6 +191,19 @@ export class PlanningAgent {
       // Validate input
       const validatedInput = this.validateInput(input);
       console.log('✅ Input validation passed');
+
+      // Phase 4: Analyze user prompt for character names and details
+      console.log('🔍 Analyzing user prompt for character information...');
+      const promptAnalysis = this.characterNameAgent.analyzeUserPrompt(validatedInput.prompt);
+      console.log(`📊 Prompt analysis: ${promptAnalysis.promptAnalysis.promptType} prompt with ${promptAnalysis.names.length} names detected`);
+      
+      // Update settings with extracted character names if not already specified
+      if (promptAnalysis.names.length > 0 && (!validatedInput.settings.characterNames || validatedInput.settings.characterNames.length === 0)) {
+        console.log(`📝 Auto-detected character names: ${promptAnalysis.names.join(', ')}`);
+        validatedInput.settings.characterNames = promptAnalysis.names;
+      } else if (promptAnalysis.names.length > 0 && validatedInput.settings.characterNames && validatedInput.settings.characterNames.length > 0) {
+        console.log(`📝 User-specified names: ${validatedInput.settings.characterNames.join(', ')}, detected names: ${promptAnalysis.names.join(', ')}`);
+      }
 
       // Generate back cover first
       const backCover = await this.runValidatedStep(
@@ -265,6 +281,42 @@ export class PlanningAgent {
         },
         z.any() // ChiefEditorAgent handles its own validation
       );
+
+      // Phase 4: Validate character name consistency across all planning stages
+      if (validatedInput.settings.characterNames && validatedInput.settings.characterNames.length > 0) {
+        console.log('🔍 Validating character name consistency...');
+        const nameValidation = this.characterNameAgent.validateNameConsistency(
+          validatedInput.settings.characterNames,
+          backCover,
+          outline.characters,
+          storyBible.characters
+        );
+        
+        console.log(`📊 Character name consistency score: ${nameValidation.score}/100`);
+        
+        if (!nameValidation.isValid) {
+          console.warn('⚠️ Character name inconsistencies detected:');
+          nameValidation.issues.forEach(issue => {
+            console.warn(`  - ${issue.severity.toUpperCase()}: ${issue.recommendation}`);
+          });
+        } else {
+          console.log('✅ Character names are consistent across all planning stages');
+        }
+
+        // Log character name mapping for debugging
+        const nameMapping = this.characterNameAgent.createNameMapping(
+          validatedInput.settings.characterNames,
+          backCover,
+          outline.characters,
+          storyBible.characters
+        );
+        console.log('📋 Character name mapping:', {
+          userSpecified: nameMapping.userSpecifiedNames,
+          backCover: nameMapping.backCoverNames,
+          outline: nameMapping.outlineNames,
+          storyBible: nameMapping.storyBibleNames
+        });
+      }
 
       // Assemble and validate final result
       const bookPlan: BookPlan = {
@@ -688,7 +740,7 @@ Respond in JSON format with the following structure:
       const outline: BookOutline = {
         summary: `A ${settings.genre} story that explores themes of growth and challenge while engaging ${settings.targetAudience} readers. The narrative follows a compelling journey that balances character development with plot advancement.`,
         themes: [settings.genre, 'Character Development', 'Personal Growth', 'Conflict Resolution'],
-        characters: this.generateFallbackCharacters(settings),
+        characters: this.generateFallbackCharacters(settings, prompt),
         chapters: this.generateFallbackChapters(settings)
       };
 
@@ -863,14 +915,27 @@ Respond in JSON format with the following structure:
   /**
    * Generate fallback characters using user-provided names when available
    */
-  private generateFallbackCharacters(settings: BookSettings): BookOutline['characters'] {
+  private generateFallbackCharacters(settings: BookSettings, userPrompt?: string): BookOutline['characters'] {
     const characters = [];
     
     console.log('👥 Generating fallback characters');
     
-    if (settings.characterNames && settings.characterNames.length > 0) {
-      console.log(`📝 Using ${settings.characterNames.length} user-provided character names`);
-      settings.characterNames.forEach((name, index) => {
+    // Try to extract names from prompt if not in settings
+    let characterNames = settings.characterNames || [];
+    
+    if (characterNames.length === 0 && userPrompt) {
+      console.log('🔍 No character names in settings, analyzing prompt...');
+      const promptAnalysis = this.characterNameAgent.analyzeUserPrompt(userPrompt);
+      characterNames = promptAnalysis.names;
+      
+      if (characterNames.length > 0) {
+        console.log(`📝 Auto-extracted ${characterNames.length} character names from prompt: ${characterNames.join(', ')}`);
+      }
+    }
+    
+    if (characterNames.length > 0) {
+      console.log(`📝 Using ${characterNames.length} character names`);
+      characterNames.forEach((name, index) => {
         characters.push({
           name: name.trim(),
           role: index === 0 ? 'protagonist' : 'supporting',
@@ -881,7 +946,7 @@ Respond in JSON format with the following structure:
         });
       });
     } else {
-      console.log('📝 No character names provided, using default protagonist');
+      console.log('📝 No character names found, using generic protagonist');
       characters.push({
         name: 'Protagonist',
         role: 'protagonist',

@@ -2,6 +2,10 @@ import { openai } from '@ai-sdk/openai'
 import { generateText, streamText, tool } from 'ai'
 import { z } from 'zod'
 import { env } from './env'
+import { RateLimiter } from './ai/rate-limiter'
+
+// Global cost tracker instance
+const costTracker = new RateLimiter();
 
 /**
  * Validate OpenAI configuration
@@ -50,6 +54,17 @@ export async function generateAIText(
     });
 
     console.log(`OpenAI response received, tokens used: ${result.usage?.totalTokens || 'unknown'}`);
+    
+    // Track costs if usage data is available
+    if (result.usage) {
+      costTracker.trackTokenUsage(
+        model,
+        result.usage.promptTokens || 0,
+        result.usage.completionTokens || 0,
+        'generateAIText'
+      );
+    }
+    
     return result;
     
   } catch (error) {
@@ -162,4 +177,25 @@ export async function generateWithTools(
     temperature,
     maxTokens,
   })
+}
+
+/**
+ * Get current API cost tracking summary
+ */
+export function getAPICostSummary(): string {
+  return costTracker.getCostSummary();
+}
+
+/**
+ * Get current usage statistics
+ */
+export function getAPIUsageStats() {
+  return costTracker.getUsageStats();
+}
+
+/**
+ * Reset cost tracking (useful for per-book tracking)
+ */
+export function resetCostTracking(): void {
+  costTracker.resetUsageTracking();
 }

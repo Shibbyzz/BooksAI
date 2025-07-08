@@ -12,15 +12,32 @@ export interface GenerationProgress {
 }
 
 export class ProgressManager {
+  private lastUpdateTime: Map<string, number> = new Map();
+  private readonly UPDATE_THROTTLE_MS = 1000; // Minimum 1 second between updates per book
+
   constructor() {}
 
   /**
-   * Update book generation progress
+   * Check if enough time has passed since last update for throttling
+   */
+  private shouldThrottleUpdate(bookId: string): boolean {
+    const lastUpdate = this.lastUpdateTime.get(bookId) || 0;
+    const now = Date.now();
+    return (now - lastUpdate) < this.UPDATE_THROTTLE_MS;
+  }
+
+  /**
+   * Update book generation progress with throttling
    */
   async updateBookProgress(
     bookId: string,
-    progress: Partial<GenerationProgress>
+    progress: Partial<GenerationProgress>,
+    forceUpdate: boolean = false
   ): Promise<void> {
+    // Apply throttling unless forced
+    if (!forceUpdate && this.shouldThrottleUpdate(bookId)) {
+      return; // Skip this update to reduce API calls
+    }
     // Convert GenerationProgress to BookProgress format for Redis
     const mapGenerationStep = (step?: GenerationStep): BookProgress['generationStep'] => {
       switch (step) {
@@ -49,7 +66,10 @@ export class ProgressManager {
     // Update Redis progress
     await progressTracker.updateProgress(bookId, redisProgress);
     
-    console.log(`Book ${bookId} progress updated:`, redisProgress);
+    // Record the update time for throttling
+    this.lastUpdateTime.set(bookId, Date.now());
+    
+    console.log(`📊 Progress updated for ${bookId}: ${redisProgress.overallProgress}% - ${redisProgress.message}`);
   }
 
   /**
@@ -125,7 +145,7 @@ export class ProgressManager {
   }
 
   /**
-   * Update progress with detailed chapter information
+   * Update progress with detailed chapter information (with throttling)
    */
   async updateChapterProgress(
     bookId: string,
@@ -134,6 +154,11 @@ export class ProgressManager {
     sectionNumber: number,
     totalSections: number
   ): Promise<void> {
+    // Apply throttling for frequent section updates
+    if (this.shouldThrottleUpdate(bookId)) {
+      return;
+    }
+
     // Calculate overall progress during chapter generation
     const overallChapterProgress = (sectionNumber - 1) / totalSections;
     
@@ -151,6 +176,9 @@ export class ProgressManager {
       currentChapter: chapterNumber,
       totalChapters: totalChapters
     });
+
+    // Record the update time for throttling
+    this.lastUpdateTime.set(bookId, Date.now());
   }
 
   /**

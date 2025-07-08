@@ -5,6 +5,9 @@ import { ProofreaderAgent } from '../agents/proofreader-agent';
 import { SupervisionAgent, type ChapterReview } from '../agents/supervision-agent';
 import SectionTransitionAgent, { type TransitionContext, type NarrativeVoice, type TransitionResult } from '../agents/section-transition-agent';
 import { HumanQualityEnhancer, type QualityEnhancement } from '../agents/human-quality-enhancer';
+import { SceneSanityChecker, type ValidationResult } from '../agents/scene-sanity-checker';
+import { DriftGuardAgent, type DriftValidationResult } from '../agents/drift-guard-agent';
+import { RedundancyReducerAgent, type ReductionResult } from '../agents/redundancy-reducer-agent';
 import { GenreStructurePlanner, type SectionPlan } from '../planning/genre-structure';
 import { RateLimiter } from '../rate-limiter';
 import { prisma } from '../../prisma';
@@ -14,6 +17,7 @@ import type { BookSettings } from '@/types';
 import { ProgressManager } from './ProgressManager';
 import { ValidationService } from './ValidationService';
 import { CheckpointManager, type FailedSection } from './CheckpointManager';
+import { MemoryAwarePrompting } from './MemoryAwarePrompting';
 
 export interface ChapterGenerationConfig {
   writingAgent: {
@@ -41,11 +45,15 @@ export class ChapterGenerator {
   private proofreaderAgent: ProofreaderAgent;
   private supervisionAgent: SupervisionAgent;
   private sectionTransitionAgent: SectionTransitionAgent;
+  private sceneSanityChecker: SceneSanityChecker;
+  private driftGuardAgent: DriftGuardAgent;
+  private redundancyReducerAgent: RedundancyReducerAgent;
   private rateLimiter: RateLimiter;
   private progressManager: ProgressManager;
   private validationService: ValidationService;
   private checkpointManager: CheckpointManager;
   private qualityEnhancer: HumanQualityEnhancer;
+  private memoryAwarePrompting: MemoryAwarePrompting;
   private narrativeVoice?: NarrativeVoice;
   private config: ChapterGenerationConfig;
 
@@ -55,7 +63,8 @@ export class ChapterGenerator {
     validationService: ValidationService,
     checkpointManager: CheckpointManager,
     continuityAgent: ContinuityInspectorAgent,
-    qualityEnhancer: HumanQualityEnhancer
+    qualityEnhancer: HumanQualityEnhancer,
+    memoryAwarePrompting: MemoryAwarePrompting
   ) {
     this.config = config;
     this.progressManager = progressManager;
@@ -63,6 +72,7 @@ export class ChapterGenerator {
     this.checkpointManager = checkpointManager;
     this.continuityAgent = continuityAgent;
     this.qualityEnhancer = qualityEnhancer;
+    this.memoryAwarePrompting = memoryAwarePrompting;
 
     this.writingAgent = new WritingAgent({
       model: config.writingAgent.model,
@@ -94,6 +104,30 @@ export class ChapterGenerator {
       maxTokens: 2000
     });
 
+    this.sceneSanityChecker = new SceneSanityChecker({
+      strictGenreEnforcement: true,
+      allowNarrativeTenseShifts: false,
+      customRules: []
+    });
+
+    this.driftGuardAgent = new DriftGuardAgent({
+      model: config.writingAgent.model,
+      temperature: 0.1,
+      maxTokens: 2000,
+      semanticDeviationThreshold: 35,
+      strictMode: false,
+      enableVectorAnalysis: true
+    });
+
+    this.redundancyReducerAgent = new RedundancyReducerAgent({
+      model: config.writingAgent.model,
+      temperature: 0.3,
+      maxTokens: 3000,
+      analysisWindowSize: 2000,
+      repetitionThreshold: 3,
+      criticalRepetitionThreshold: 5
+    });
+
     this.rateLimiter = new RateLimiter();
   }
 
@@ -115,6 +149,14 @@ export class ChapterGenerator {
         where: { id: chapterId },
         data: { status: 'GENERATING' }
       });
+
+      // Initialize DriftGuard profile for this chapter
+      try {
+        await this.driftGuardAgent.initializeProfile(settings, storyBible);
+        console.log('✅ DriftGuard profile initialized for chapter generation');
+      } catch (error) {
+        console.warn('⚠️ DriftGuard initialization failed, continuing without drift detection:', error);
+      }
 
       // Get comprehensive chapter context
       const chapterContext = await this.getChapterContext(bookId, chapterId, settings);
@@ -315,14 +357,78 @@ export class ChapterGenerator {
       // Integrate section transition if available
       const finalSceneContent = transitionText ? `${transitionText}\n\n${sceneResult.content}` : sceneResult.content;
 
-      // Quality gate: Check with continuity inspector
-      const consistencyCheck = await this.continuityAgent.checkChapterConsistency(
+      // NEW: Pre-section validation pipeline (CRITICAL QUALITY GATES)
+      console.log(`🛡️ Running pre-section validation for Section ${sectionNumber}`);
+      
+      // Get previous content for context
+      const previousContent = previousSections.length > 0 ? previousSections[0] : undefined;
+      
+      // Get accumulated chapter content so far
+      const accumulatedContent = await this.getAccumulatedChapterContent(chapterId, sectionNumber);
+
+      // Step 1: Scene Sanity Check (genre consistency, narrative rules)
+      const sanityCheck = await this.sceneSanityChecker.validateSection(
+        finalSceneContent,
         chapterContext.chapter.chapterNumber,
+        sectionNumber,
+        settings,
+        previousContent
+      );
+
+      if (!sanityCheck.isValid) {
+        const criticalErrors = sanityCheck.errors.filter(e => e.severity === 'critical');
+        if (criticalErrors.length > 0) {
+          console.error(`❌ Section ${sectionNumber} FAILED sanity check with critical errors:`, criticalErrors);
+          throw new Error(`Section validation failed: ${criticalErrors.map(e => e.message).join('; ')}`);
+        }
+      }
+
+      console.log(`✅ Section ${sectionNumber} passed sanity check (${sanityCheck.confidence}% confidence)`);
+
+      // Step 2: DriftGuard - Vector-based genre/environment consistency check
+      const driftCheck = await this.driftGuardAgent.analyzeContentDrift(
+        finalSceneContent,
+        sectionNumber,
+        chapterContext.chapter.chapterNumber,
+        accumulatedContent
+      );
+
+      if (!driftCheck.isValid) {
+        const criticalDriftIssues = driftCheck.issues.filter(i => i.severity === 'critical');
+        if (criticalDriftIssues.length > 0) {
+          console.error(`❌ Section ${sectionNumber} FAILED drift check with critical issues:`, criticalDriftIssues);
+          throw new Error(`Genre/environment drift validation failed: ${criticalDriftIssues.map(i => i.description).join('; ')}`);
+        }
+      }
+
+      console.log(`✅ Section ${sectionNumber} passed drift check (${driftCheck.driftAnalysis.overallDrift}% drift)`);
+
+      // Step 3: Real-time continuity check 
+      const continuityCheck = await this.continuityAgent.checkSectionConsistency(
+        chapterContext.chapter.chapterNumber,
+        sectionNumber,
         finalSceneContent,
         sceneContext.purpose,
+        accumulatedContent,
         chapterPlan.researchFocus || [],
         settings
       );
+
+      // Determine if section passes quality gates
+      if (continuityCheck.overallScore < 40) {  // Reduced from 60 to 40 - more reasonable for creative content
+        const criticalIssues = continuityCheck.issues.filter(i => i.severity === 'critical');
+        if (criticalIssues.length > 2) {  // Allow 1-2 critical issues before failing
+          console.error(`❌ Section ${sectionNumber} FAILED continuity check with ${criticalIssues.length} critical issues:`, criticalIssues);
+          throw new Error(`Continuity validation failed: ${criticalIssues.map(i => i.description).join('; ')}`);
+        } else {
+          console.warn(`⚠️ Section ${sectionNumber} has continuity score ${continuityCheck.overallScore}/100 but only ${criticalIssues.length} critical issues - proceeding`);
+        }
+      }
+
+      console.log(`✅ Section ${sectionNumber} passed continuity check (${continuityCheck.overallScore}/100)`);
+
+      // Legacy quality gate for comparison (now redundant but kept for compatibility)
+      const consistencyCheck = continuityCheck;
 
       // Supervision check for quality issues
       const supervisionScore = await this.getSupervisionScore(
@@ -334,24 +440,63 @@ export class ChapterGenerator {
       );
 
       // Apply proofreading with narrative voice consistency
-      const finalContent = await this.applyProofreading(
+      const proofreaderContent = await this.applyProofreading(
         finalSceneContent,
         settings,
         consistencyCheck.overallScore
       );
 
-      // Handle quality assessment
+      // Step 4: RedundancyReducer - Analyze and reduce repetitive phrases (after proofreading)
+      console.log(`🔍 RedundancyReducer: Analyzing section ${sectionNumber} for repetitive patterns`);
+      
+      const redundancyCheck = await this.redundancyReducerAgent.quickRedundancyCheck(
+        proofreaderContent,
+        accumulatedContent
+      );
+
+      let finalContent = proofreaderContent;
+
+      if (redundancyCheck.needsReduction && redundancyCheck.score > 25) {
+        console.log(`⚠️ RedundancyReducer: High redundancy detected (${redundancyCheck.score}%), applying reduction`);
+        
+        try {
+          const fullAnalysis = await this.redundancyReducerAgent.analyzeRedundancy(
+            proofreaderContent,
+            accumulatedContent,
+            settings
+          );
+
+          const reductionResult = await this.redundancyReducerAgent.reduceRedundancy(
+            proofreaderContent,
+            fullAnalysis,
+            settings
+          );
+
+          if (reductionResult.redundancyReduced > 5) {
+            finalContent = reductionResult.improvedText;
+            console.log(`✅ RedundancyReducer: Reduced redundancy by ${reductionResult.redundancyReduced}% (${reductionResult.changesApplied.length} changes)`);
+          } else {
+            console.log(`ℹ️ RedundancyReducer: Minor improvements only, keeping original content`);
+          }
+        } catch (error) {
+          console.warn('⚠️ RedundancyReducer: Failed to reduce redundancy, keeping original content:', error);
+        }
+      } else {
+        console.log(`✅ RedundancyReducer: Content quality acceptable (${redundancyCheck.score}% redundancy)`);
+      }
+
+      // Handle quality assessment with more reasonable thresholds
       const overallQualityScore = Math.round((consistencyCheck.overallScore + supervisionScore) / 2);
       
-      if (overallQualityScore < 60) {
-        await this.handleFailedSection(
-          bookId,
-          chapterId,
-          sectionNumber,
-          overallQualityScore,
-          consistencyCheck.overallScore,
-          supervisionScore
-        );
+      if (overallQualityScore < 35) {  // Reduced from 60 to 35 - much more reasonable for creative content
+        console.error(`❌ Section ${sectionNumber} failed quality assessment: ${overallQualityScore}/100`);
+        
+        // More nuanced failure logic - only fail if BOTH scores are very low
+        if (consistencyCheck.overallScore < 30 && supervisionScore < 30) {
+          throw new Error(`Section quality critically low (${overallQualityScore}/100). Both consistency (${consistencyCheck.overallScore}) and supervision (${supervisionScore}) scores are below minimum threshold.`);
+        } else {
+          console.warn(`⚠️ Section ${sectionNumber} has low overall quality (${overallQualityScore}/100) but individual scores are acceptable - proceeding`);
+        }
       }
 
       // Update section in database
@@ -370,7 +515,29 @@ export class ChapterGenerator {
     } catch (error) {
       console.error(`    ❌ Error generating section ${sectionNumber}:`, error);
       
-      // Fallback to basic writing agent
+      // NEW: Check if this is a validation failure (should hard fail)
+      if (error instanceof Error && (
+        error.message.includes('Section validation failed') ||
+        error.message.includes('Continuity validation failed') ||
+        error.message.includes('Genre/environment drift validation failed') ||
+        error.message.includes('Section quality too low')
+      )) {
+        console.error(`🚫 HARD FAIL: Section ${sectionNumber} failed critical validation - cannot proceed with fallback`);
+        
+        // Mark section as failed and throw error up
+        await prisma.section.updateMany({
+          where: { chapterId, sectionNumber },
+          data: { 
+            status: 'NEEDS_REVISION',
+            updatedAt: new Date()
+          }
+        });
+        
+        throw error; // Propagate the validation error
+      }
+      
+      // Only use fallback for technical/generation errors, not validation failures
+      console.warn(`⚠️ Technical error in section ${sectionNumber}, attempting fallback...`);
       await this.generateSectionWithFallback(
         bookId,
         chapterId,
@@ -473,57 +640,59 @@ export class ChapterGenerator {
       );
     }
     
-    // SMART SECTION LOGIC: Don't create too many sections for short chapters
+    // TARGET: Keep sections between 800-1200 words for optimal AI generation
+    const OPTIMAL_SECTION_MIN = 800;
+    const OPTIMAL_SECTION_MAX = 1200;
+    const OPTIMAL_SECTION_TARGET = 1000;
+    
     console.log(`📊 Calculating sections for chapter: ${chapterWordCount} words`);
     
-    const genreRules = GenreStructurePlanner.getStructureRules(settings.genre);
-    let sectionsNeeded = Math.round(chapterWordCount / genreRules.optimalSectionLength);
+    // Calculate sections based on optimal word count range
+    let sectionsNeeded: number;
     
-    // Special handling for short chapters
-    if (chapterWordCount <= 500) {
-      // Very short chapters: 1 section only
+    if (chapterWordCount <= OPTIMAL_SECTION_MAX) {
+      // Chapter fits in one section
       sectionsNeeded = 1;
-      console.log(`🔧 Short chapter (${chapterWordCount} words): using 1 section`);
-    } else if (chapterWordCount <= 1000) {
-      // Short chapters: 1-2 sections max
-      sectionsNeeded = Math.min(2, sectionsNeeded);
-      console.log(`🔧 Short chapter (${chapterWordCount} words): limiting to ${sectionsNeeded} sections`);
-    } else if (chapterWordCount <= 2000) {
-      // Medium chapters: 2-3 sections max
-      sectionsNeeded = Math.min(3, sectionsNeeded);
-      console.log(`🔧 Medium chapter (${chapterWordCount} words): limiting to ${sectionsNeeded} sections`);
-    }
-    
-    const wordsPerSection = chapterWordCount / sectionsNeeded;
-    
-    // Ensure section length is reasonable
-    if (wordsPerSection < 200) {
-      // Too many sections for short content
-      sectionsNeeded = Math.max(1, Math.floor(chapterWordCount / 200));
-      console.log(`🔧 Adjusted sections to ${sectionsNeeded} to avoid sections under 200 words`);
-    } else if (wordsPerSection > genreRules.maxSectionLength) {
-      sectionsNeeded = Math.ceil(chapterWordCount / genreRules.maxSectionLength);
-    }
-    
-    // Apply genre-specific constraints
-    if (sectionsNeeded === 1 && !genreRules.allowSingleSectionChapters) {
-      // Only force multiple sections for longer chapters
-      if (chapterWordCount > 800) {
-        sectionsNeeded = 2;
+      console.log(`🔧 Chapter (${chapterWordCount} words): fits in 1 section`);
+    } else {
+      // Calculate sections to keep each within optimal range
+      sectionsNeeded = Math.ceil(chapterWordCount / OPTIMAL_SECTION_TARGET);
+      
+      // Check if this results in sections that are too long
+      const averageWordsPerSection = chapterWordCount / sectionsNeeded;
+      
+      if (averageWordsPerSection > OPTIMAL_SECTION_MAX) {
+        // Recalculate to ensure no section exceeds maximum
+        sectionsNeeded = Math.ceil(chapterWordCount / OPTIMAL_SECTION_MAX);
+        console.log(`🔧 Increased sections to ${sectionsNeeded} to stay under ${OPTIMAL_SECTION_MAX} words per section`);
+      } else if (averageWordsPerSection < OPTIMAL_SECTION_MIN && sectionsNeeded > 1) {
+        // Reduce sections if they would be too short
+        sectionsNeeded = Math.max(1, Math.floor(chapterWordCount / OPTIMAL_SECTION_MIN));
+        console.log(`🔧 Reduced sections to ${sectionsNeeded} to stay above ${OPTIMAL_SECTION_MIN} words per section`);
       }
     }
     
-    // Final bounds: minimum 1 section, maximum 4 sections per chapter
-    const finalSectionCount = Math.max(1, Math.min(4, sectionsNeeded));
+    // Apply genre constraints
+    const genreRules = GenreStructurePlanner.getStructureRules(settings.genre);
+    if (sectionsNeeded === 1 && !genreRules.allowSingleSectionChapters && chapterWordCount > OPTIMAL_SECTION_MIN) {
+      sectionsNeeded = 2;
+      console.log(`🔧 Genre ${settings.genre} requires multiple sections - using 2 sections`);
+    }
     
-    console.log(`📋 Final: ${finalSectionCount} sections for ${chapterWordCount} words (${Math.round(chapterWordCount / finalSectionCount)} words per section)`);
+    // Final bounds: minimum 1 section, maximum 5 sections per chapter
+    const finalSectionCount = Math.max(1, Math.min(5, sectionsNeeded));
     
-    // Create section plans
+    const averageWordsPerSection = Math.round(chapterWordCount / finalSectionCount);
+    console.log(`📋 Final: ${finalSectionCount} sections for ${chapterWordCount} words (avg ${averageWordsPerSection} words per section)`);
+    
+    // Create section plans with balanced word distribution
     const sections: SectionPlan[] = [];
     const baseWordCount = Math.floor(chapterWordCount / finalSectionCount);
+    const extraWords = chapterWordCount % finalSectionCount;
     
     for (let i = 1; i <= finalSectionCount; i++) {
-      const wordTarget = baseWordCount + (i === finalSectionCount ? chapterWordCount % finalSectionCount : 0);
+      // Distribute extra words across the last sections
+      const wordTarget = baseWordCount + (i > finalSectionCount - extraWords ? 1 : 0);
       
       sections.push({
         number: i,
@@ -608,6 +777,22 @@ export class ChapterGenerator {
     });
 
     return previousSections.map(s => s.content).filter(Boolean);
+  }
+
+  /**
+   * Get accumulated chapter content up to current section for continuity checking
+   */
+  private async getAccumulatedChapterContent(chapterId: string, currentSection: number): Promise<string> {
+    const completedSections = await prisma.section.findMany({
+      where: {
+        chapterId,
+        sectionNumber: { lt: currentSection },
+        status: 'COMPLETE'
+      },
+      orderBy: { sectionNumber: 'asc' }
+    });
+
+    return completedSections.map(s => s.content).filter(Boolean).join('\n\n');
   }
 
   /**

@@ -158,19 +158,20 @@ export class ProseValidator {
     const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 0);
     const passiveRatio = passiveCount / sentences.length;
     
-    if (passiveRatio > 0.4) {
+    // More lenient thresholds for creative writing
+    if (passiveRatio > 0.5) {
       return {
         message: `Excessive passive voice usage (${Math.round(passiveRatio * 100)}% of sentences) - weakens prose impact`,
         severity: 'critical',
         category: 'voice'
       };
-    } else if (passiveRatio > 0.25) {
+    } else if (passiveRatio > 0.35) {
       return {
         message: `High passive voice usage (${Math.round(passiveRatio * 100)}% of sentences) - consider more active constructions`,
         severity: 'high',
         category: 'voice'
       };
-    } else if (passiveRatio > 0.15) {
+    } else if (passiveRatio > 0.25) {
       return {
         message: `Moderate passive voice usage (${Math.round(passiveRatio * 100)}% of sentences) - room for improvement`,
         severity: 'medium',
@@ -204,19 +205,20 @@ export class ProseValidator {
     const wordCount = this.countWords(content);
     const adverbRatio = adverbCount / wordCount;
     
-    if (adverbRatio > 0.08) {
+    // More lenient thresholds for creative writing
+    if (adverbRatio > 0.12) {
       return {
         message: `Excessive adverb usage (${Math.round(adverbRatio * 100)}% of words) - weakens prose strength`,
         severity: 'high',
         category: 'style'
       };
-    } else if (adverbRatio > 0.05) {
+    } else if (adverbRatio > 0.08) {
       return {
         message: `High adverb usage (${Math.round(adverbRatio * 100)}% of words) - consider stronger verbs`,
         severity: 'medium',
         category: 'style'
       };
-    } else if (adverbRatio > 0.03) {
+    } else if (adverbRatio > 0.06) {
       return {
         message: `Moderate adverb usage (${Math.round(adverbRatio * 100)}% of words) - room for improvement`,
         severity: 'low',
@@ -246,19 +248,20 @@ export class ProseValidator {
     const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 0);
     const tellingRatio = tellingCount / sentences.length;
     
-    if (tellingRatio > 0.2) {
+    // More lenient thresholds - some telling is acceptable in narrative
+    if (tellingRatio > 0.3) {
       return {
         message: `Excessive "telling" language (${Math.round(tellingRatio * 100)}% of sentences) - lacks immersive showing`,
         severity: 'high',
         category: 'style'
       };
-    } else if (tellingRatio > 0.1) {
+    } else if (tellingRatio > 0.2) {
       return {
         message: `Moderate "telling" language (${Math.round(tellingRatio * 100)}% of sentences) - could show more through actions`,
         severity: 'medium',
         category: 'style'
       };
-    } else if (tellingRatio > 0.05) {
+    } else if (tellingRatio > 0.15) {
       return {
         message: `Some "telling" language detected (${Math.round(tellingRatio * 100)}% of sentences) - minor improvement opportunity`,
         severity: 'low',
@@ -289,31 +292,45 @@ export class ProseValidator {
     proseValidation: ProseValidation,
     additionalCorrections: number = 0
   ): ProseQualityScore {
-    let baseScore = 95; // Start with high quality assumption
+    const baseScore = 85; // More realistic starting point for AI-generated content
     
-    // Deduct for additional corrections (e.g., from proofreading)
-    const correctionDeductions = additionalCorrections * 2;
+    // More reasonable deductions for corrections (many corrections can be minor style improvements)
+    const correctionDeductions = Math.min(15, additionalCorrections * 1); // Cap correction penalties
     
-    // Deduct for prose validation warnings
+    // More balanced deductions for prose validation warnings
     const proseDeductions = proseValidation.warnings.reduce((total, warning) => {
       switch (warning.severity) {
-        case 'critical': return total + 15;
-        case 'high': return total + 10;
-        case 'medium': return total + 5;
-        case 'low': return total + 2;
-        default: return total + 2;
+        case 'critical': return total + 8;  // Reduced from 15 to 8
+        case 'high': return total + 5;     // Reduced from 10 to 5  
+        case 'medium': return total + 2;   // Reduced from 5 to 2
+        case 'low': return total + 1;      // Reduced from 2 to 1
+        default: return total + 1;
       }
     }, 0);
     
-    const finalScore = Math.max(40, baseScore - correctionDeductions - proseDeductions);
+    // Apply diminishing returns for multiple warnings of the same type
+    const categoryGroups = new Map<string, number>();
+    proseValidation.warnings.forEach(warning => {
+      categoryGroups.set(warning.category, (categoryGroups.get(warning.category) || 0) + 1);
+    });
+    
+    // Reduce penalty for multiple warnings in same category (likely related issues)
+    let categoryPenalty = 0;
+    categoryGroups.forEach((count, category) => {
+      if (count > 2) {
+        categoryPenalty += Math.min(5, (count - 2) * 1); // Small penalty for many similar issues
+      }
+    });
+    
+    const finalScore = Math.max(60, baseScore - correctionDeductions - proseDeductions - categoryPenalty);
     
     // Generate scoring summary
     const summary = this.generateScoringSummary(proseValidation, additionalCorrections);
     
-    // Determine if should be flagged for review
-    const shouldReview = finalScore < 70 || 
-                        proseValidation.overallSeverity === 'critical' ||
-                        proseValidation.warnings.filter(w => w.severity === 'high').length >= 2;
+    // More lenient review thresholds
+    const shouldReview = finalScore < 65 || 
+                        proseValidation.warnings.filter(w => w.severity === 'critical').length >= 2 ||
+                        proseValidation.warnings.filter(w => w.severity === 'high').length >= 3;
     
     return {
       score: Math.round(finalScore),

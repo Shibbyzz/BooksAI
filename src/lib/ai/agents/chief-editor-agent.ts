@@ -1444,62 +1444,117 @@ Use this EXACT JSON format:
       // Attempt to parse JSON response from AI
       let cleanContent = responseText.trim();
       
-      // Clean markdown code blocks
+      // More aggressive cleaning of common response formats
       if (cleanContent.startsWith('```json')) {
-        cleanContent = cleanContent.replace(/```json\s*/, '').replace(/```\s*$/, '');
+        cleanContent = cleanContent.replace(/^```json\s*/, '').replace(/```\s*$/, '');
       } else if (cleanContent.startsWith('```')) {
-        cleanContent = cleanContent.replace(/```\s*/, '').replace(/```\s*$/, '');
+        cleanContent = cleanContent.replace(/^```\s*/, '').replace(/```\s*$/, '');
       }
+      
+      // Remove any leading/trailing backticks
+      cleanContent = cleanContent.replace(/^`+|`+$/g, '');
+      
+      // Try to find JSON object if response has extra text
+      const jsonMatch = cleanContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        cleanContent = jsonMatch[0];
+      }
+      
+      console.log(`🔍 Parsing scene plans... (${cleanContent.length} chars)`);
       
       const parsed = JSON.parse(cleanContent);
       
-      // Validate structure
-      if (parsed.scenes && Array.isArray(parsed.scenes)) {
-        const validScenes = parsed.scenes.map((scene: any, index: number) => ({
-          sceneNumber: scene.sceneNumber || index + 1,
-          purpose: scene.purpose || `Scene ${index + 1} purpose`,
-          setting: scene.setting || 'Scene setting',
-          characters: Array.isArray(scene.characters) ? scene.characters : ['Main character'],
-          conflict: scene.conflict || 'Scene conflict',
-          outcome: scene.outcome || 'Scene outcome',
-          wordTarget: scene.wordTarget || Math.floor(chapterWordTarget / parsed.scenes.length),
-          mood: scene.mood || 'Scene mood',
-          keyDialogue: scene.keyDialogue || undefined,
-          researchNeeded: Array.isArray(scene.researchNeeded) ? scene.researchNeeded : []
-        }));
+      // Validate structure - be more flexible with validation
+      if (parsed.scenes && Array.isArray(parsed.scenes) && parsed.scenes.length > 0) {
+        const validScenes = parsed.scenes.map((scene: any, index: number) => {
+          // More flexible scene validation and defaulting
+          const sceneNumber = typeof scene.sceneNumber === 'number' ? scene.sceneNumber : index + 1;
+          const characters = Array.isArray(scene.characters) && scene.characters.length > 0 
+            ? scene.characters 
+            : ['Main character'];
+          const wordTarget = typeof scene.wordTarget === 'number' && scene.wordTarget > 0 
+            ? scene.wordTarget 
+            : Math.floor(chapterWordTarget / parsed.scenes.length);
+          const researchNeeded = Array.isArray(scene.researchNeeded) 
+            ? scene.researchNeeded 
+            : [];
+          
+          return {
+            sceneNumber,
+            purpose: scene.purpose || `Scene ${sceneNumber}: Story development`,
+            setting: scene.setting || 'Scene setting',
+            characters,
+            conflict: scene.conflict || 'Scene-specific conflict',
+            outcome: scene.outcome || 'Scene outcome advancing the plot',
+            wordTarget,
+            mood: scene.mood || 'Appropriate to story tone',
+            keyDialogue: scene.keyDialogue || undefined,
+            researchNeeded
+          };
+        });
+        
+        // Ensure word targets add up correctly
+        const totalWordTarget = validScenes.reduce((sum: number, scene: any) => sum + scene.wordTarget, 0);
+        const difference = chapterWordTarget - totalWordTarget;
+        
+        if (Math.abs(difference) > 50) {
+          // Distribute the difference across scenes
+          const adjustment = Math.floor(difference / validScenes.length);
+          validScenes.forEach((scene: any) => {
+            scene.wordTarget += adjustment;
+          });
+          
+          // Handle remainder
+          const remainder = chapterWordTarget - validScenes.reduce((sum: number, scene: any) => sum + scene.wordTarget, 0);
+          if (remainder !== 0) {
+            validScenes[0].wordTarget += remainder;
+          }
+        }
         
         console.log(`✅ Successfully parsed ${validScenes.length} scenes from AI response`);
         return validScenes;
       }
       
-      // If scenes array is missing or invalid, fall through to fallback
-      console.warn('AI response missing valid scenes array, using fallback');
+      // If scenes array is missing or invalid, log and fall through to fallback
+      console.warn('⚠️ AI response missing valid scenes array, structure:', {
+        hasScenes: !!parsed.scenes,
+        isArray: Array.isArray(parsed.scenes),
+        length: Array.isArray(parsed.scenes) ? parsed.scenes.length : 'N/A'
+      });
       
     } catch (parseError) {
-      console.warn('Failed to parse scene plans from AI response:', parseError);
-      console.log('Response preview:', responseText.substring(0, 200));
+      console.warn('⚠️ Failed to parse scene plans from AI response:', parseError);
+      console.log('📝 Raw response preview:', responseText.substring(0, 300));
+      console.log('🧹 Cleaned content preview:', responseText.trim().substring(0, 300));
     }
     
-    // FALLBACK: Generate placeholder scenes only if parsing fails
+    // FALLBACK: Generate structured placeholder scenes
     console.log('🔄 Generating fallback scenes for chapter');
     const scenes: StoryBible['chapterPlans'][0]['scenes'] = [];
     const sceneCount = Math.max(2, Math.min(4, Math.floor(chapterWordTarget / 600)));
     const wordsPerScene = Math.floor(chapterWordTarget / sceneCount);
     
     for (let i = 1; i <= sceneCount; i++) {
+      const sceneType = i === 1 ? 'Opening' : 
+                       i === sceneCount ? 'Conclusion' : 
+                       'Development';
+      
       scenes.push({
         sceneNumber: i,
-        purpose: `Scene ${i}: Story development`,
+        purpose: `Scene ${i}: ${sceneType} - Story development and character progression`,
         setting: 'Chapter setting',
         characters: ['Main character'],
-        conflict: 'Scene-specific conflict',
-        outcome: 'Scene outcome advancing the plot',
-        wordTarget: wordsPerScene,
-        mood: 'Appropriate to story tone',
+        conflict: `Scene ${i} conflict that advances the plot`,
+        outcome: `Scene ${i} outcome that leads naturally to the next scene`,
+        wordTarget: wordsPerScene + (i === sceneCount ? chapterWordTarget % sceneCount : 0),
+        mood: i === 1 ? 'Engaging start' : 
+              i === sceneCount ? 'Satisfying conclusion' : 
+              'Building tension',
         researchNeeded: []
       });
     }
     
+    console.log(`📋 Generated ${scenes.length} fallback scenes totaling ${scenes.reduce((sum: number, s: any) => sum + s.wordTarget, 0)} words`);
     return scenes;
   }
 

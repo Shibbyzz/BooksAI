@@ -879,13 +879,33 @@ ${config.englishName.toUpperCase()} WRITING GUIDELINES:
     confidence: number;
     warnings: string[];
   } {
-    const englishPattern = /^[a-zA-Z0-9\s.,!?'";\-:()]+$/;
-    const isBasicEnglish = englishPattern.test(content.replace(/[\n\r]/g, ' '));
+    // More permissive pattern that allows common punctuation and formatting
+    const englishPattern = /^[a-zA-Z0-9\s.,!?'";\-:()…""\n\r\t–—\[\]{}\/\\@#$%^&*+=|<>~`]*$/;
+    
+    // Also check for non-Latin script characters (more reliable approach)
+    const nonLatinScript = /[^\x00-\x7F\u00A0-\u017F\u0100-\u024F\u2000-\u206F\u2070-\u209F\u20A0-\u20CF\u2100-\u214F]/;
+    const hasNonLatinScript = nonLatinScript.test(content);
+    
+    // Use basic pattern OR non-Latin script check
+    const isBasicEnglish = englishPattern.test(content) || !hasNonLatinScript;
+    
+    // Calculate confidence based on multiple factors
+    let confidence = 0.9;
+    const warnings: string[] = [];
+    
+    if (hasNonLatinScript) {
+      confidence = 0.3;
+      warnings.push('Content may contain non-English characters');
+    } else if (!englishPattern.test(content)) {
+      // Content has unusual punctuation but no non-Latin script
+      confidence = 0.7;
+      warnings.push('Content contains unusual characters but appears to be English');
+    }
     
     return {
       isValid: isBasicEnglish,
-      confidence: isBasicEnglish ? 0.9 : 0.3,
-      warnings: isBasicEnglish ? [] : ['Content may contain non-English characters']
+      confidence,
+      warnings
     };
   }
 

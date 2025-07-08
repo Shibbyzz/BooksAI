@@ -35,15 +35,68 @@ export interface StoryArcProgress {
   issues: string[];
 }
 
+// Phase 3: Automatic Revision Triggers
+export interface RevisionTrigger {
+  chapterNumber: number;
+  triggerType: 'quality_threshold' | 'arc_stagnation' | 'consistency_break' | 'pacing_issue';
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  description: string;
+  suggestedRevisions: string[];
+  triggeredAt: Date;
+  autoRevision: boolean;
+}
+
+export interface AutoRevisionConfig {
+  enabled: boolean;
+  qualityThreshold: number; // Trigger revision if score below this
+  everyNthChapter: number; // Check every N chapters (default 2)
+  maxConsecutiveRevisions: number; // Prevent infinite revision loops
+  criticalIssueAutoRevision: boolean; // Auto-trigger on critical issues
+}
+
+export interface SupervisionSummary {
+  overallQuality: number;
+  revisionTriggers: RevisionTrigger[];
+  revisionQueue: RevisionTask[];
+  qualityTrend: 'improving' | 'stable' | 'declining';
+  criticalIssuesCount: number;
+  recommendedActions: string[];
+}
+
+export interface RevisionTask {
+  id: string;
+  chapterNumber: number;
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  taskType: 'full_revision' | 'section_revision' | 'quality_enhancement' | 'arc_adjustment';
+  description: string;
+  createdAt: Date;
+  estimatedEffort: 'low' | 'medium' | 'high';
+  dependencies: string[];
+}
+
 export class SupervisionAgent {
   private config: SupervisionConfig;
   private openai: OpenAI;
+  
+  // Phase 3: Auto-revision tracking
+  private autoRevisionConfig: AutoRevisionConfig;
+  private revisionHistory: Map<number, RevisionTrigger[]> = new Map(); // chapter -> triggers
+  private revisionQueue: RevisionTask[] = [];
+  private qualityHistory: { chapterNumber: number; score: number; timestamp: Date }[] = [];
 
-  constructor(config: SupervisionConfig) {
+  constructor(config: SupervisionConfig, autoRevisionConfig?: AutoRevisionConfig) {
     this.config = config;
     this.openai = new OpenAI({
       apiKey: env.OPENAI_API_KEY,
     });
+    
+    this.autoRevisionConfig = autoRevisionConfig || {
+      enabled: true,
+      qualityThreshold: 65,  // Reduced from 80 to 65 - more reasonable for creative content
+      everyNthChapter: 2,
+      maxConsecutiveRevisions: 8,  // Increased from 3 to 8 for more improvement attempts
+      criticalIssueAutoRevision: true
+    };
   }
 
   /**
@@ -89,6 +142,22 @@ export class SupervisionAgent {
 
       console.log(`  📊 Chapter ${chapterNumber} review complete - Score: ${review.overallScore}/100`);
       console.log(`  ⚠️  Found ${review.issues.length} issues (${review.issues.filter(i => i.severity === 'critical').length} critical)`);
+
+      // Phase 3: Check for automatic revision triggers
+      if (this.autoRevisionConfig.enabled) {
+        const revisionTriggers = await this.checkRevisionTriggers(review, chapterNumber);
+        if (revisionTriggers.length > 0) {
+          console.log(`  🔄 Auto-revision triggered: ${revisionTriggers.length} triggers found`);
+          await this.processRevisionTriggers(revisionTriggers, chapterNumber);
+        }
+      }
+
+      // Track quality history
+      this.qualityHistory.push({
+        chapterNumber,
+        score: review.overallScore,
+        timestamp: new Date()
+      });
 
       return review;
 
@@ -408,5 +477,296 @@ Respond in JSON format:
     }
     
     return recommendations;
+  }
+
+  // Phase 3: Automatic Revision Triggers
+  
+  /**
+   * Check if current chapter review triggers automatic revision
+   */
+  private async checkRevisionTriggers(review: ChapterReview, chapterNumber: number): Promise<RevisionTrigger[]> {
+    const triggers: RevisionTrigger[] = [];
+    
+    // Quality threshold trigger
+    if (review.overallScore < this.autoRevisionConfig.qualityThreshold) {
+      triggers.push({
+        chapterNumber,
+        triggerType: 'quality_threshold',
+        severity: review.overallScore < 60 ? 'high' : 'medium',
+        description: `Chapter quality score ${review.overallScore} below threshold ${this.autoRevisionConfig.qualityThreshold}`,
+        suggestedRevisions: [
+          'Enhance emotional depth',
+          'Improve pacing and flow',
+          'Strengthen character development',
+          ...review.recommendations
+        ],
+        triggeredAt: new Date(),
+        autoRevision: review.overallScore < 60 // Auto-revise if very low quality
+      });
+    }
+    
+    // Critical issues trigger
+    const criticalIssues = review.issues.filter(i => i.severity === 'critical');
+    if (criticalIssues.length > 0 && this.autoRevisionConfig.criticalIssueAutoRevision) {
+      triggers.push({
+        chapterNumber,
+        triggerType: 'consistency_break',
+        severity: 'critical',
+        description: `${criticalIssues.length} critical issues detected`,
+        suggestedRevisions: criticalIssues.map(issue => issue.suggestedFix),
+        triggeredAt: new Date(),
+        autoRevision: true
+      });
+    }
+    
+    // Pacing issues trigger
+    if (review.pacingScore < 60) {
+      triggers.push({
+        chapterNumber,
+        triggerType: 'pacing_issue',
+        severity: 'medium',
+        description: `Pacing score ${review.pacingScore} indicates flow problems`,
+        suggestedRevisions: [
+          'Vary sentence length and structure',
+          'Add or remove transitions',
+          'Balance dialogue and narrative',
+          'Adjust scene pacing'
+        ],
+        triggeredAt: new Date(),
+        autoRevision: false
+      });
+    }
+    
+    // Arc stagnation trigger (check every N chapters)
+    if (chapterNumber % this.autoRevisionConfig.everyNthChapter === 0) {
+      const arcStagnation = this.detectArcStagnation(chapterNumber);
+      if (arcStagnation) {
+        triggers.push({
+          chapterNumber,
+          triggerType: 'arc_stagnation',
+          severity: 'medium',
+          description: 'Character arc progression has stagnated',
+          suggestedRevisions: [
+            'Advance character development',
+            'Introduce new conflicts',
+            'Deepen character relationships',
+            'Add arc-specific scenes'
+          ],
+          triggeredAt: new Date(),
+          autoRevision: false
+        });
+      }
+    }
+    
+    return triggers;
+  }
+  
+  /**
+   * Process revision triggers and queue revision tasks
+   */
+  private async processRevisionTriggers(triggers: RevisionTrigger[], chapterNumber: number): Promise<void> {
+    // Store triggers in history
+    if (!this.revisionHistory.has(chapterNumber)) {
+      this.revisionHistory.set(chapterNumber, []);
+    }
+    this.revisionHistory.get(chapterNumber)!.push(...triggers);
+    
+    // Process each trigger
+    for (const trigger of triggers) {
+      // IMPROVED: More intelligent revision limit checking
+      const recentRevisions = this.countRecentRevisions(chapterNumber);
+      const criticalIssues = triggers.filter(t => t.severity === 'critical').length;
+      
+      // Allow more revisions for critical issues or if quality is improving
+      const effectiveMaxRevisions = criticalIssues > 0 
+        ? this.autoRevisionConfig.maxConsecutiveRevisions + 3  // Extra attempts for critical issues
+        : this.autoRevisionConfig.maxConsecutiveRevisions;
+        
+      if (recentRevisions >= effectiveMaxRevisions) {
+        console.log(`⚠️  Skipping auto-revision for chapter ${chapterNumber} - max consecutive revisions reached (${recentRevisions}/${effectiveMaxRevisions})`);
+        
+        // But still allow critical issue revisions if quality is very low
+        if (trigger.severity === 'critical' && recentRevisions < this.autoRevisionConfig.maxConsecutiveRevisions + 5) {
+          console.log(`🚨 Allowing critical revision for chapter ${chapterNumber} despite limits`);
+        } else {
+          continue;
+        }
+      }
+      
+      // Create revision task
+      const revisionTask = this.createRevisionTask(trigger, chapterNumber);
+      this.revisionQueue.push(revisionTask);
+      
+      console.log(`📋 Revision task queued: ${revisionTask.taskType} for chapter ${chapterNumber} (${trigger.severity} priority)`);
+    }
+  }
+  
+  /**
+   * Create a revision task from a trigger
+   */
+  private createRevisionTask(trigger: RevisionTrigger, chapterNumber: number): RevisionTask {
+    const taskId = `rev_${chapterNumber}_${Date.now()}`;
+    
+    let taskType: RevisionTask['taskType'];
+    let priority: RevisionTask['priority'];
+    let estimatedEffort: RevisionTask['estimatedEffort'];
+    
+    switch (trigger.triggerType) {
+      case 'quality_threshold':
+        taskType = trigger.severity === 'high' ? 'full_revision' : 'quality_enhancement';
+        priority = trigger.severity as RevisionTask['priority'];
+        estimatedEffort = trigger.severity === 'high' ? 'high' : 'medium';
+        break;
+      case 'consistency_break':
+        taskType = 'section_revision';
+        priority = 'critical';
+        estimatedEffort = 'medium';
+        break;
+      case 'pacing_issue':
+        taskType = 'quality_enhancement';
+        priority = 'medium';
+        estimatedEffort = 'low';
+        break;
+      case 'arc_stagnation':
+        taskType = 'arc_adjustment';
+        priority = 'medium';
+        estimatedEffort = 'medium';
+        break;
+      default:
+        taskType = 'quality_enhancement';
+        priority = 'medium';
+        estimatedEffort = 'medium';
+    }
+    
+    return {
+      id: taskId,
+      chapterNumber,
+      priority,
+      taskType,
+      description: trigger.description,
+      createdAt: new Date(),
+      estimatedEffort,
+      dependencies: []
+    };
+  }
+  
+  /**
+   * Detect if character arcs have stagnated
+   */
+  private detectArcStagnation(chapterNumber: number): boolean {
+    // Simple heuristic: if quality scores haven't improved in recent chapters
+    const recentScores = this.qualityHistory
+      .filter(h => h.chapterNumber >= chapterNumber - 3 && h.chapterNumber <= chapterNumber)
+      .map(h => h.score);
+    
+    if (recentScores.length < 2) return false;
+    
+    const avgRecent = recentScores.reduce((a, b) => a + b, 0) / recentScores.length;
+    const trend = recentScores[recentScores.length - 1] - recentScores[0];
+    
+    return avgRecent < 75 && trend <= 0; // Stagnant if low quality and no improvement
+  }
+  
+  /**
+   * Count recent revisions for a chapter to prevent infinite loops
+   * IMPROVED: More intelligent counting with quality-aware thresholds
+   */
+  private countRecentRevisions(chapterNumber: number): number {
+    const triggers = this.revisionHistory.get(chapterNumber) || [];
+    
+    // Use a more reasonable time window: 2 hours for active development
+    const timeWindow = 2 * 60 * 60 * 1000; // 2 hours instead of 24 hours
+    const recentTriggers = triggers.filter(t => 
+      Date.now() - t.triggeredAt.getTime() < timeWindow
+    );
+    
+    // SMARTER COUNTING: Only count actual revision attempts, not just triggers
+    // Filter out duplicate triggers of the same type within short time periods
+    const uniqueRevisions = new Map<string, RevisionTrigger>();
+    
+    for (const trigger of recentTriggers) {
+      const key = `${trigger.triggerType}_${trigger.severity}`;
+      const existing = uniqueRevisions.get(key);
+      
+      // Only count if it's a new type or significantly newer
+      if (!existing || trigger.triggeredAt.getTime() - existing.triggeredAt.getTime() > 10 * 60 * 1000) {
+        uniqueRevisions.set(key, trigger);
+      }
+    }
+    
+    console.log(`📊 Chapter ${chapterNumber} revision count: ${uniqueRevisions.size} unique revisions in last 2 hours`);
+    return uniqueRevisions.size;
+  }
+  
+  /**
+   * Get current supervision summary with revision queue
+   */
+  async getSupervisionSummary(chapterReviews: ChapterReview[]): Promise<SupervisionSummary> {
+    const overallQuality = chapterReviews.reduce((sum, r) => sum + r.overallScore, 0) / chapterReviews.length;
+    const criticalIssuesCount = chapterReviews.flatMap(r => r.issues.filter(i => i.severity === 'critical')).length;
+    
+    // Calculate quality trend
+    const qualityTrend = this.calculateQualityTrend();
+    
+    // Get all revision triggers
+    const allTriggers = Array.from(this.revisionHistory.values()).flat();
+    
+    // Generate recommendations
+    const recommendedActions = [];
+    if (this.revisionQueue.length > 0) {
+      recommendedActions.push(`${this.revisionQueue.length} revision tasks pending`);
+    }
+    if (criticalIssuesCount > 0) {
+      recommendedActions.push(`${criticalIssuesCount} critical issues require immediate attention`);
+    }
+    if (qualityTrend === 'declining') {
+      recommendedActions.push('Quality trend is declining - consider comprehensive review');
+    }
+    
+    return {
+      overallQuality,
+      revisionTriggers: allTriggers,
+      revisionQueue: this.revisionQueue,
+      qualityTrend,
+      criticalIssuesCount,
+      recommendedActions
+    };
+  }
+  
+  /**
+   * Calculate quality trend from history
+   */
+  private calculateQualityTrend(): 'improving' | 'stable' | 'declining' {
+    if (this.qualityHistory.length < 3) return 'stable';
+    
+    const recent = this.qualityHistory.slice(-3);
+    const scores = recent.map(h => h.score);
+    
+    const trend = scores[scores.length - 1] - scores[0];
+    
+    if (trend > 5) return 'improving';
+    if (trend < -5) return 'declining';
+    return 'stable';
+  }
+  
+  /**
+   * Clear completed revision tasks
+   */
+  clearCompletedRevisions(completedTaskIds: string[]): void {
+    this.revisionQueue = this.revisionQueue.filter(task => !completedTaskIds.includes(task.id));
+  }
+  
+  /**
+   * Get pending revision tasks for a specific chapter
+   */
+  getPendingRevisions(chapterNumber: number): RevisionTask[] {
+    return this.revisionQueue.filter(task => task.chapterNumber === chapterNumber);
+  }
+  
+  /**
+   * Update auto-revision configuration
+   */
+  updateAutoRevisionConfig(config: Partial<AutoRevisionConfig>): void {
+    this.autoRevisionConfig = { ...this.autoRevisionConfig, ...config };
   }
 } 

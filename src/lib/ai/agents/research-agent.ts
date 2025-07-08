@@ -242,14 +242,28 @@ export class ResearchAgent {
     for (const [aiKey, schemaKey] of Object.entries(mapping)) {
       if (parsed[aiKey]) {
         if (Array.isArray(parsed[aiKey])) {
-          result[schemaKey] = parsed[aiKey];
+          // Transform array items to ensure they have required fields
+          result[schemaKey] = parsed[aiKey].map((item: any) => ({
+            topic: item.topic || item.name || schemaKey,
+            priority: (item.priority || item.Priority || 'medium').toLowerCase(),
+            scope: (item.scope || item.Scope || 'broad').toLowerCase(),
+            context: item.context || 
+                    item.importance || 
+                    item['Why it\'s important for the story'] || 
+                    item.description || 
+                    `Research for ${item.topic || schemaKey}`
+          }));
         } else if (typeof parsed[aiKey] === 'object') {
           // Convert object format to array format
           const item = {
             topic: parsed[aiKey].topic || schemaKey,
-            priority: parsed[aiKey].Priority?.toLowerCase() || 'medium',
-            scope: parsed[aiKey].Scope?.toLowerCase() || 'broad',
-            context: parsed[aiKey]['Why it\'s important for the story'] || `Research for ${schemaKey}`
+            priority: (parsed[aiKey].Priority || parsed[aiKey].priority || 'medium').toLowerCase(),
+            scope: (parsed[aiKey].Scope || parsed[aiKey].scope || 'broad').toLowerCase(),
+            context: parsed[aiKey].context || 
+                    parsed[aiKey].importance || 
+                    parsed[aiKey]['Why it\'s important for the story'] || 
+                    parsed[aiKey].description || 
+                    `Research for ${schemaKey}`
           };
           result[schemaKey] = [item];
         }
