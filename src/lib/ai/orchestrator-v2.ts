@@ -26,6 +26,7 @@ import { ValidationService } from './services/ValidationService';
 import { CheckpointManager, type GenerationCheckpoint } from './services/CheckpointManager';
 import { StoryMemoryManager } from './services/StoryMemoryManager';
 import { ChapterGenerator, type ChapterGenerationConfig } from './services/ChapterGenerator';
+import { MemoryAwarePrompting } from './services/MemoryAwarePrompting';
 
 export interface GenerationConfig {
   planningAgent: {
@@ -82,6 +83,7 @@ export class BookGenerationOrchestrator {
   private checkpointManager: CheckpointManager;
   private storyMemoryManager: StoryMemoryManager;
   private chapterGenerator: ChapterGenerator;
+  private memoryAwarePrompting: MemoryAwarePrompting;
   
   // State
   private config: GenerationConfig;
@@ -181,12 +183,24 @@ export class BookGenerationOrchestrator {
     });
 
     // Store enabled features based on tier
+    console.log(`🎯 Initializing orchestrator for ${userTier} tier user`);
+    console.log(`📊 Feature access:`, {
+      researchAgent: access.aiAgents.researchAgent,
+      chiefEditorAgent: access.aiAgents.chiefEditorAgent,
+      continuityInspectorAgent: access.aiAgents.continuityInspectorAgent,
+      proofreaderAgent: access.aiAgents.proofreaderAgent,
+      humanQualityEnhancer: access.aiAgents.humanQualityEnhancer,
+      supervisionAgent: access.aiAgents.supervisionAgent
+    });
+    
     if (access.aiAgents.researchAgent) this.enabledFeatures.add('research');
     if (access.aiAgents.chiefEditorAgent) this.enabledFeatures.add('chiefEditor');
     if (access.aiAgents.continuityInspectorAgent) this.enabledFeatures.add('continuity');
     if (access.aiAgents.proofreaderAgent) this.enabledFeatures.add('proofreading');
     if (access.aiAgents.humanQualityEnhancer) this.enabledFeatures.add('quality');
     if (access.aiAgents.supervisionAgent) this.enabledFeatures.add('supervision');
+    
+    console.log(`🔧 Enabled features:`, Array.from(this.enabledFeatures));
 
     this.rateLimiter = new RateLimiter();
 
@@ -195,6 +209,7 @@ export class BookGenerationOrchestrator {
     this.validationService = new ValidationService();
     this.checkpointManager = new CheckpointManager();
     this.storyMemoryManager = new StoryMemoryManager();
+    this.memoryAwarePrompting = new MemoryAwarePrompting(this.storyMemoryManager);
 
     // Initialize chapter generator with dependencies
     const chapterConfig: ChapterGenerationConfig = {
@@ -210,7 +225,8 @@ export class BookGenerationOrchestrator {
       this.validationService,
       this.checkpointManager,
       this.continuityAgent,
-      this.qualityEnhancer
+      this.qualityEnhancer,
+      this.memoryAwarePrompting
     );
   }
 
@@ -320,7 +336,7 @@ export class BookGenerationOrchestrator {
   /**
    * Generate complete book outline with story bible
    */
-  async generateOutline(bookId: string): Promise<OutlineGeneration> {
+  async generateOutline(bookId: string, existingResearch?: any): Promise<OutlineGeneration> {
     try {
       await this.progressManager.updateBookProgress(bookId, {
         step: GenerationStep.OUTLINE,
@@ -339,26 +355,34 @@ export class BookGenerationOrchestrator {
 
       console.log('🎯 Generating comprehensive story bible...');
 
-      // Step 1: Conduct research (if available for tier)
+      // Step 1: Use existing research if provided, otherwise conduct research (if available for tier)
       let research;
-      if (this.isFeatureEnabled('research')) {
-        this.logTierRestriction('Research Agent', true);
-        research = await this.researchAgent.conductComprehensiveResearch(
-          book.prompt,
-          book.backCover,
-          book.settings
-        );
+      if (existingResearch) {
+        console.log('📚 Using existing research data to avoid duplication');
+        research = existingResearch;
       } else {
-        this.logTierRestriction('Research Agent', true);
-        console.log('📝 Using basic research for free tier');
-        // Provide minimal research for free users
-        research = {
-          domainKnowledge: [],
-          characterBackgrounds: [],
-          settingDetails: [],
-          technicalAspects: [],
-          culturalContext: []
-        };
+        console.log(`🔍 Checking research access - userTier: ${this.userTier}, enabled features:`, Array.from(this.enabledFeatures));
+        console.log(`🎯 isFeatureEnabled('research'): ${this.isFeatureEnabled('research')}`);
+        
+        if (this.isFeatureEnabled('research')) {
+          console.log(`✅ Research Agent enabled for ${this.userTier} tier`);
+          research = await this.researchAgent.conductComprehensiveResearch(
+            book.prompt,
+            book.backCover,
+            book.settings
+          );
+        } else {
+          console.log(`🔒 Research Agent blocked for ${this.userTier} tier - ${this.getUpgradeMessage('Research Agent')}`);
+          console.log('📝 Using basic research for free tier');
+          // Provide minimal research for free users
+          research = {
+            domainKnowledge: [],
+            characterBackgrounds: [],
+            settingDetails: [],
+            technicalAspects: [],
+            culturalContext: []
+          };
+        }
       }
 
       // Step 2: Generate comprehensive book plan
@@ -735,7 +759,7 @@ export class BookGenerationOrchestrator {
   }
 
   /**
-   * Create chapters from story bible (FIXED VERSION)
+   * Create chapters from story bible (OPTIMIZED VERSION - BATCH OPERATIONS)
    */
   private async createChaptersFromStoryBible(bookId: string, storyBible: StoryBible): Promise<void> {
     await prisma.chapter.deleteMany({
@@ -779,28 +803,38 @@ export class BookGenerationOrchestrator {
     } else if (totalWords <= 10000) {
       const maxChapters = 6;
       if (storyBible.chapterPlans.length > maxChapters) {
-        console.log(`🔧 Consolidating ${storyBible.chapterPlans.length} chapters into ${maxChapters} for medium book`);
+        console.log(`🔧 Consolidating ${storyBible.chapterPlans.length} chapters into ${maxChapters} for short book`);
         chaptersToCreate = this.consolidateChaptersFromStoryBible(storyBible.chapterPlans, maxChapters, totalWords);
       }
     }
 
     console.log(`📚 Creating ${chaptersToCreate.length} chapters from story bible...`);
     
-    for (const chapterPlan of chaptersToCreate) {
-      // Ensure chapter has required properties
-      const chapterTitle = chapterPlan.title || `Chapter ${chapterPlan.number}`;
-      const chapterSummary = chapterPlan.purpose || 'Chapter content';
-      
-      const chapter = await prisma.chapter.create({
-        data: {
-          bookId,
-          chapterNumber: chapterPlan.number,
-          title: chapterTitle,
-          summary: chapterSummary,
-          status: 'PLANNED'
-        }
-      });
+    // OPTIMIZED: Prepare all chapter data for batch creation
+    const chapterDataArray = chaptersToCreate.map(chapterPlan => ({
+      bookId,
+      chapterNumber: chapterPlan.number,
+      title: chapterPlan.title || `Chapter ${chapterPlan.number}`,
+      summary: chapterPlan.purpose || 'Chapter content',
+      status: 'PLANNED' as const
+    }));
 
+    // OPTIMIZED: Batch create all chapters
+    const createdChapters = await prisma.$transaction(
+      chapterDataArray.map(chapterData => 
+        prisma.chapter.create({ data: chapterData })
+      )
+    );
+
+    console.log(`✅ Batch created ${createdChapters.length} chapters`);
+
+    // OPTIMIZED: Prepare all section data for batch creation
+    const allSectionData: any[] = [];
+    
+    for (let i = 0; i < chaptersToCreate.length; i++) {
+      const chapterPlan = chaptersToCreate[i];
+      const createdChapter = createdChapters[i];
+      
       // Create sections based on scenes, but limit sections for short chapters
       const chapterWordTarget = Math.floor(totalWords / chaptersToCreate.length);
       const maxSections = chapterWordTarget <= 500 ? 1 : 
@@ -810,33 +844,47 @@ export class BookGenerationOrchestrator {
       const scenesAvailable = chapterPlan.scenes || [];
       const sectionsToCreate = Math.min(scenesAvailable.length || 1, maxSections);
       
-      console.log(`  📖 Chapter ${chapterPlan.number}: ${chapterTitle} (${sectionsToCreate} sections, ${chapterWordTarget} words)`);
+      console.log(`  📖 Chapter ${chapterPlan.number}: ${chapterPlan.title || `Chapter ${chapterPlan.number}`} (${sectionsToCreate} sections, ${chapterWordTarget} words)`);
 
       for (let sceneIndex = 0; sceneIndex < sectionsToCreate; sceneIndex++) {
         const scene = scenesAvailable[sceneIndex] || { purpose: 'Scene content', setting: 'Story setting' };
         
-        await prisma.section.create({
-          data: {
-            chapterId: chapter.id,
-            sectionNumber: sceneIndex + 1,
-            title: `Scene ${sceneIndex + 1}: ${scene.purpose || 'Scene content'}`,
-            content: '',
-            wordCount: 0,
-            prompt: JSON.stringify({
-              sceneData: scene,
-              chapterContext: chapterPlan,
-              researchFocus: chapterPlan.researchFocus || [],
-              wordTarget: Math.floor(chapterWordTarget / sectionsToCreate)
-            }),
-            aiModel: this.config.writingAgent.model,
-            tokensUsed: 0,
-            status: 'PLANNED'
-          }
+        allSectionData.push({
+          chapterId: createdChapter.id,
+          sectionNumber: sceneIndex + 1,
+          title: `Scene ${sceneIndex + 1}: ${scene.purpose || 'Scene content'}`,
+          content: '',
+          wordCount: 0,
+          prompt: JSON.stringify({
+            sceneData: scene,
+            chapterContext: chapterPlan,
+            researchFocus: chapterPlan.researchFocus || [],
+            wordTarget: Math.floor(chapterWordTarget / sectionsToCreate)
+          }),
+          aiModel: this.config.writingAgent.model,
+          tokensUsed: 0,
+          status: 'PLANNED' as const
         });
       }
     }
 
-    console.log(`✅ Created ${chaptersToCreate.length} chapters with smart section distribution`);
+    // OPTIMIZED: Batch create all sections in chunks to avoid transaction size limits
+    const sectionBatchSize = 50; // Limit batch size for large books
+    const sectionBatches = [];
+    for (let i = 0; i < allSectionData.length; i += sectionBatchSize) {
+      sectionBatches.push(allSectionData.slice(i, i + sectionBatchSize));
+    }
+
+    for (const batch of sectionBatches) {
+      await prisma.$transaction(
+        batch.map(sectionData => 
+          prisma.section.create({ data: sectionData })
+        )
+      );
+    }
+
+    console.log(`✅ Batch created ${allSectionData.length} sections in ${sectionBatches.length} batches`);
+    console.log(`✅ Total: ${chaptersToCreate.length} chapters with smart section distribution`);
   }
 
   /**
@@ -1009,8 +1057,8 @@ export class BookGenerationOrchestrator {
       );
       
       onProgress?.(25, 'Building comprehensive outline with research integration...');
-      // Step 3: Generate enhanced outline
-      const outline = await this.generateOutline(bookId);
+      // Step 3: Generate enhanced outline (pass research to avoid duplication)
+      const outline = await this.generateOutline(bookId, research);
       
       // Step 4: Strategic planning with Chief Editor (if available for tier)
       let structurePlan;

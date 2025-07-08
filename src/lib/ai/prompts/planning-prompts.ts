@@ -23,6 +23,11 @@ ${userPrompt}
 - Target Word Count: ${settings.wordCount.toLocaleString()} words
 - Ending Type: ${settings.endingType}
 
+${settings.characterNames?.length > 0 ? `**IMPORTANT CHARACTER NAMES TO USE:**
+${settings.characterNames.join(', ')}
+
+**CRITICAL**: You MUST use these specific character names in your back cover description. These names were chosen by the user and must appear in the back cover text.` : ''}
+
 **INSTRUCTIONS:**
 1. Create a compelling back cover description (150-250 words)
 2. Include a hook that draws readers in
@@ -30,6 +35,7 @@ ${userPrompt}
 4. Match the tone and genre conventions
 5. End with intrigue, not spoilers
 6. Use language appropriate for the target audience
+${settings.characterNames?.length > 0 ? '7. **MUST include the user-specified character names listed above**' : ''}
 
 **BACK COVER DESCRIPTION:**`;
 }
@@ -42,6 +48,9 @@ export function createOutlinePrompt({
   settings, 
   previousContext 
 }: PromptContext & { previousContext: string }): string {
+  // Calculate genre-specific optimal chapter count
+  const genreChapterGuidance = getGenreChapterGuidance(settings.genre, settings.wordCount);
+  
   return `You are a professional book editor and story architect. Create a detailed book outline based on the back cover description and user requirements.
 
 **ORIGINAL USER CONCEPT:**
@@ -60,16 +69,15 @@ ${previousContext}
 
 ${settings.characterNames?.length > 0 ? `**IMPORTANT: Please use these character names in your outline: ${settings.characterNames.join(', ')}**` : ''}
 
+**GENRE-SPECIFIC STRUCTURE GUIDANCE:**
+${genreChapterGuidance}
+
 **CREATIVE OUTLINE REQUIREMENTS:**
 Create an engaging story outline with natural chapter divisions. Think like a real author - consider:
 
-1. **STORY-DRIVEN CHAPTER COUNT**: Decide how many chapters this story needs based on:
-   - Genre conventions (mystery=many short, fantasy=fewer long, etc.)
-   - Natural story beats and pacing needs
-   - Character development arcs
-   - Plot complexity and narrative flow
+1. **OPTIMAL CHAPTER COUNT**: Based on ${settings.genre} genre conventions and your ${settings.wordCount.toLocaleString()}-word target, aim for the recommended chapter structure above.
    
-2. **VARIED CHAPTER PURPOSES**: Each chapter should serve the story, not a formula:
+2. **VARIED CHAPTER PURPOSES**: Each chapter should serve the story:
    - Opening: Character introduction and hook
    - Development: Plot advancement and relationship building  
    - Tension: Conflict escalation and obstacles
@@ -81,7 +89,7 @@ Create an engaging story outline with natural chapter divisions. Think like a re
    - Rich 2-3 paragraph summary showing what happens
    - Key story beats and character moments
    - Setting and emotional tone
-   - Estimated word count based on content needs (not rigid formulas)
+   - Word count that fits the recommended chapter length
 
 **STRUCTURAL ELEMENTS TO INCLUDE:**
 - Opening hook
@@ -103,7 +111,7 @@ Please provide a comprehensive outline with:
 3. **CHARACTER PROFILES** (main characters with brief descriptions)
 4. **CHAPTER BREAKDOWN** (detailed chapter-by-chapter outline)
 
-**TARGET WORD COUNT: ${settings.wordCount.toLocaleString()} words total**
+**TARGET WORD COUNT: ${settings.wordCount.toLocaleString()}
 
 **RESPOND WITH CLEAN JSON ONLY - NO MARKDOWN, NO BACKTICKS:**
 
@@ -131,7 +139,69 @@ Please provide a comprehensive outline with:
   ]
 }
 
-💡 **CREATE AS MANY CHAPTERS AS YOUR STORY NEEDS** - Trust your creative instincts for optimal story flow!`;
+💡 **FOLLOW THE GENRE GUIDANCE ABOVE** - Create the recommended number of chapters for optimal ${settings.genre} pacing!`;
+}
+
+/**
+ * Generate genre-specific chapter guidance for the outline prompt
+ */
+function getGenreChapterGuidance(genre: string, wordCount: number): string {
+  // Import the genre structures to calculate optimal chapter count
+  const genreStructures: Record<string, any> = {
+    'adventure': {
+      optimalChapterLength: 2800,
+      preferredChapterCount: (wc: number) => Math.max(6, Math.ceil(wc / 2800)),
+    },
+    'fantasy': {
+      optimalChapterLength: 3500,
+      preferredChapterCount: (wc: number) => Math.max(4, Math.ceil(wc / 3500)),
+    },
+    'mystery': {
+      optimalChapterLength: 2800,
+      preferredChapterCount: (wc: number) => Math.max(5, Math.ceil(wc / 2800)),
+    },
+    'romance': {
+      optimalChapterLength: 2500,
+      preferredChapterCount: (wc: number) => Math.max(6, Math.ceil(wc / 2500)),
+    },
+    'thriller': {
+      optimalChapterLength: 2200,
+      preferredChapterCount: (wc: number) => Math.max(7, Math.ceil(wc / 2200)),
+    },
+    'literary': {
+      optimalChapterLength: 4000,
+      preferredChapterCount: (wc: number) => Math.max(3, Math.ceil(wc / 4000)),
+    },
+    'sci-fi': {
+      optimalChapterLength: 3200,
+      preferredChapterCount: (wc: number) => Math.max(4, Math.ceil(wc / 3200)),
+    },
+    'young-adult': {
+      optimalChapterLength: 2000,
+      preferredChapterCount: (wc: number) => Math.max(8, Math.ceil(wc / 2000)),
+    },
+    'historical': {
+      optimalChapterLength: 3800,
+      preferredChapterCount: (wc: number) => Math.max(3, Math.ceil(wc / 3800)),
+    }
+  };
+
+  const defaultStructure = {
+    optimalChapterLength: 2500,
+    preferredChapterCount: (wc: number) => Math.max(4, Math.ceil(wc / 2500)),
+  };
+
+  const structure = genreStructures[genre] || defaultStructure;
+  const optimalChapterCount = structure.preferredChapterCount(wordCount);
+  const optimalChapterLength = structure.optimalChapterLength;
+
+  return `For ${genre} genre with ${wordCount.toLocaleString()} words:
+- **RECOMMENDED CHAPTERS**: ${optimalChapterCount} chapters
+- **OPTIMAL CHAPTER LENGTH**: ~${optimalChapterLength.toLocaleString()} words per chapter
+- This provides optimal pacing and engagement for ${genre} readers
+- Each chapter should average ${Math.floor(wordCount / optimalChapterCount).toLocaleString()} words
+
+**IMPORTANT**: Please create exactly ${optimalChapterCount} chapters to match ${genre} genre conventions.`;
 }
 
 /**
@@ -177,9 +247,12 @@ export function createChapterSectionPrompt(
   sectionNumber: number,
   sectionsTotal: number,
   settings: BookSettings,
-  storyContext: string
+  storyContext: string,
+  chapterWordTarget?: number
 ): string {
-  const sectionTargetWords = Math.floor(2500 / sectionsTotal);
+  // Use provided chapter word target or calculate from settings
+  const chapterWords = chapterWordTarget || Math.floor(settings.wordCount / 12); // Assuming ~12 chapters average
+  const sectionTargetWords = Math.floor(chapterWords / sectionsTotal);
   
   return `You are a professional novelist writing a section of a ${settings.genre} book. 
 

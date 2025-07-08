@@ -85,15 +85,21 @@ export function buildTimelinePrompt(
   timeline: TimelineEntry[],
   config: ContinuityPromptConfig
 ): string {
-  const recentTimeline = timeline.slice(-5);
+  // Ensure timeline is an array and provide safe fallback
+  const safeTimeline = Array.isArray(timeline) ? timeline : [];
+  const recentTimeline = safeTimeline.slice(-5);
+  
+  const timelineDisplay = recentTimeline.length > 0 
+    ? recentTimeline.map(t => 
+        `Ch${t.chapter}: ${t.timeReference} ${t.duration ? `(${t.duration})` : ''} ${t.absoluteTime ? `at ${t.absoluteTime}` : ''}`
+      ).join('\n')
+    : 'No previous timeline entries';
   
   return `
 TASK: Check timeline consistency for Chapter ${chapterNumber}
 
 RECENT TIMELINE:
-${recentTimeline.map(t => 
-  `Ch${t.chapter}: ${t.timeReference} ${t.duration ? `(${t.duration})` : ''} ${t.absoluteTime ? `at ${t.absoluteTime}` : ''}`
-).join('\n')}
+${timelineDisplay}
 
 CHAPTER CONTENT:
 ${truncateContent(content, config.maxContentLength)}
@@ -131,15 +137,21 @@ export function buildWorldbuildingPrompt(
   worldBuilding: Array<{ element: string; description: string; chapters: number[] }>,
   config: ContinuityPromptConfig
 ): string {
-  const worldElements = worldBuilding.slice(-10);
+  // Ensure worldBuilding is an array and provide safe fallback
+  const safeWorldBuilding = Array.isArray(worldBuilding) ? worldBuilding : [];
+  const worldElements = safeWorldBuilding.slice(-10);
+  
+  const worldDisplay = worldElements.length > 0
+    ? worldElements.map(w => 
+        `${w.element}: ${w.description} (Chapters: ${Array.isArray(w.chapters) ? w.chapters.join(', ') : 'N/A'})`
+      ).join('\n')
+    : 'No established world elements yet';
   
   return `
 TASK: Check worldbuilding consistency for Chapter ${chapterNumber}
 
 ESTABLISHED WORLD ELEMENTS:
-${worldElements.map(w => 
-  `${w.element}: ${w.description} (Chapters: ${w.chapters.join(', ')})`
-).join('\n')}
+${worldDisplay}
 
 CHAPTER CONTENT:
 ${truncateContent(content, config.maxContentLength)}

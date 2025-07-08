@@ -225,6 +225,28 @@ export const GENRE_STRUCTURES: Record<string, GenreStructureRules> = {
     allowSingleSectionChapters: false,
     preferSceneBreaks: true,
     timeJumpFrequency: 'occasional'
+  },
+  
+  'adventure': {
+    optimalChapterLength: 2800,
+    minChapterLength: 2000,
+    maxChapterLength: 4000,
+    preferredChapterCount: (wordCount) => Math.max(6, Math.ceil(wordCount / 2800)),
+    optimalSectionLength: 1000,
+    minSectionLength: 700,
+    maxSectionLength: 1400,
+    preferredSectionsPerChapter: 3,
+    pacingPattern: 'accelerating',
+    chapterEndStyle: 'cliffhanger',
+    preferredTransitions: [
+      { type: 'scene-break', weight: 0.4, description: 'Quick location changes' },
+      { type: 'bridge-paragraph', weight: 0.3, description: 'Maintain momentum' },
+      { type: 'time-jump', weight: 0.2, description: 'Fast-paced progression' },
+      { type: 'emotional-bridge', weight: 0.1, description: 'High-energy connections' }
+    ],
+    allowSingleSectionChapters: true,
+    preferSceneBreaks: true,
+    timeJumpFrequency: 'frequent'
   }
 };
 

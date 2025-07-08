@@ -25,6 +25,18 @@ export interface TransitionContext {
     expectedTimeframe: string;
   };
   
+  // Future planning context (Phase 3 enhancement)
+  futureSections?: {
+    sectionNumber: number;
+    type: SectionType;
+    purpose: string;
+    emotionalBeat: string;
+    expectedCharacters: string[];
+    expectedSetting: string;
+    criticalPlotPoints: string[];
+    arcProgression: string[];
+  }[];
+  
   // Chapter context
   chapterNumber: number;
   totalChapters: number;
@@ -37,6 +49,14 @@ export interface TransitionContext {
   // Transition requirements
   transitionType: TransitionStyle;
   transitionLength: 'brief' | 'medium' | 'extended';
+  
+  // Future planning requirements (Phase 3 enhancement)
+  futurePlanning?: {
+    preventDeadEnds: boolean;
+    ensureArcProgression: boolean;
+    maintainPlotMomentum: boolean;
+    anticipateConflicts: boolean;
+  };
 }
 
 export interface NarrativeVoice {
@@ -61,6 +81,15 @@ export interface TransitionResult {
     adjustments: string[];
   };
   qualityScore: number;
+  
+  // Future planning results (Phase 3 enhancement)
+  futurePlanning?: {
+    deadEndRisk: 'low' | 'medium' | 'high';
+    arcProgressionSupport: boolean;
+    plotMomentumMaintained: boolean;
+    conflictAnticipation: string[];
+    strategicSetups: string[];
+  };
 }
 
 export interface VoiceAnalysis {
@@ -165,6 +194,13 @@ export class SectionTransitionAgent {
       // Assess quality
       const qualityScore = await this.assessTransitionQuality(transitionText, context);
       
+      // Phase 3: Future planning analysis
+      let futurePlanning = undefined;
+      if (context.futurePlanning && context.futureSections) {
+        futurePlanning = await this.analyzeFuturePlanning(context, transitionText, voiceAnalysis);
+        console.log(`  🔮 Future planning analysis: ${futurePlanning.deadEndRisk} dead-end risk, arc progression ${futurePlanning.arcProgressionSupport ? 'supported' : 'at risk'}`);
+      }
+      
       return {
         transitionText,
         transitionType: context.transitionType.type,
@@ -173,7 +209,8 @@ export class SectionTransitionAgent {
           maintained: voiceAnalysis.consistency.score > 80,
           adjustments: voiceAnalysis.consistency.recommendations
         },
-        qualityScore
+        qualityScore,
+        futurePlanning
       };
       
     } catch (error) {
@@ -198,6 +235,201 @@ export class SectionTransitionAgent {
     }
   }
   
+  /**
+   * Phase 3: Analyze future planning implications of the transition
+   */
+  private async analyzeFuturePlanning(
+    context: TransitionContext,
+    transitionText: string,
+    voiceAnalysis: VoiceAnalysis
+  ): Promise<NonNullable<TransitionResult['futurePlanning']>> {
+    if (!context.futureSections || !context.futurePlanning) {
+      return {
+        deadEndRisk: 'low',
+        arcProgressionSupport: true,
+        plotMomentumMaintained: true,
+        conflictAnticipation: [],
+        strategicSetups: []
+      };
+    }
+
+    console.log(`🔮 Analyzing future planning for ${context.futureSections.length} upcoming sections`);
+
+    try {
+      // Analyze dead-end risk
+      const deadEndRisk = await this.assessDeadEndRisk(context, transitionText);
+      
+      // Check arc progression support
+      const arcProgressionSupport = await this.assessArcProgressionSupport(context, transitionText);
+      
+      // Evaluate plot momentum
+      const plotMomentumMaintained = await this.assessPlotMomentum(context, transitionText);
+      
+      // Identify conflict anticipation opportunities
+      const conflictAnticipation = await this.identifyConflictAnticipation(context, transitionText);
+      
+      // Find strategic setup opportunities
+      const strategicSetups = await this.identifyStrategicSetups(context, transitionText);
+
+      return {
+        deadEndRisk,
+        arcProgressionSupport,
+        plotMomentumMaintained,
+        conflictAnticipation,
+        strategicSetups
+      };
+
+    } catch (error) {
+      console.error('Error in future planning analysis:', error);
+      return {
+        deadEndRisk: 'medium',
+        arcProgressionSupport: false,
+        plotMomentumMaintained: false,
+        conflictAnticipation: [],
+        strategicSetups: []
+      };
+    }
+  }
+
+  /**
+   * Assess the risk of creating narrative dead ends
+   */
+  private async assessDeadEndRisk(context: TransitionContext, transitionText: string): Promise<'low' | 'medium' | 'high'> {
+    if (!context.futureSections) return 'low';
+
+    // Check for conflicting setup requirements
+    const futureRequirements = context.futureSections.map(section => ({
+      characters: section.expectedCharacters,
+      setting: section.expectedSetting,
+      plotPoints: section.criticalPlotPoints
+    }));
+
+    // Simple heuristic: if future sections require drastically different contexts
+    const settingChanges = new Set(futureRequirements.map(req => req.setting)).size;
+    const characterRequirements = new Set(futureRequirements.flatMap(req => req.characters)).size;
+
+    if (settingChanges > 2 || characterRequirements > 4) {
+      return 'high';
+    } else if (settingChanges > 1 || characterRequirements > 2) {
+      return 'medium';
+    } else {
+      return 'low';
+    }
+  }
+
+  /**
+   * Assess if the transition supports character arc progression
+   */
+  private async assessArcProgressionSupport(context: TransitionContext, transitionText: string): Promise<boolean> {
+    if (!context.futureSections) return true;
+
+    // Check if future sections have arc progression requirements
+    const hasArcProgression = context.futureSections.some(section => 
+      section.arcProgression && section.arcProgression.length > 0
+    );
+
+    // If no arc progression needed, transition is fine
+    if (!hasArcProgression) return true;
+
+    // Check if transition maintains character focus
+    const currentCharacters = context.nextSection.expectedCharacters;
+    const futureCharacters = context.futureSections.flatMap(section => section.expectedCharacters);
+    const characterContinuity = currentCharacters.some(char => futureCharacters.includes(char));
+
+    return characterContinuity;
+  }
+
+  /**
+   * Assess if the transition maintains plot momentum
+   */
+  private async assessPlotMomentum(context: TransitionContext, transitionText: string): Promise<boolean> {
+    if (!context.futureSections) return true;
+
+    // Check for critical plot points in future sections
+    const criticalPlotPoints = context.futureSections.flatMap(section => section.criticalPlotPoints);
+    
+    // If no critical plot points, momentum is maintained
+    if (criticalPlotPoints.length === 0) return true;
+
+    // Check if transition emotional beat flows toward future requirements
+    const currentBeat = context.nextSection.emotionalBeat;
+    const futureBeat = context.futureSections[0]?.emotionalBeat;
+
+    // Simple heuristic: compatible emotional progression
+    return this.areEmotionalBeatsCompatible(currentBeat, futureBeat);
+  }
+
+  /**
+   * Identify opportunities for conflict anticipation
+   */
+  private async identifyConflictAnticipation(context: TransitionContext, transitionText: string): Promise<string[]> {
+    if (!context.futureSections) return [];
+
+    const conflicts = [];
+    
+    // Look for future conflicts that can be foreshadowed
+    for (const section of context.futureSections) {
+      if (section.purpose.toLowerCase().includes('conflict') || 
+          section.purpose.toLowerCase().includes('tension') ||
+          section.purpose.toLowerCase().includes('confrontation')) {
+        conflicts.push(`Foreshadow ${section.purpose.toLowerCase()} in section ${section.sectionNumber}`);
+      }
+    }
+
+    return conflicts.slice(0, 3); // Limit to 3 most relevant
+  }
+
+  /**
+   * Identify strategic setup opportunities
+   */
+  private async identifyStrategicSetups(context: TransitionContext, transitionText: string): Promise<string[]> {
+    if (!context.futureSections) return [];
+
+    const setups = [];
+    
+    // Look for future requirements that can be set up now
+    for (const section of context.futureSections) {
+      // Character introductions
+      const newCharacters = section.expectedCharacters.filter(char => 
+        !context.nextSection.expectedCharacters.includes(char)
+      );
+      
+      if (newCharacters.length > 0) {
+        setups.push(`Introduce or reference ${newCharacters.join(', ')} for section ${section.sectionNumber}`);
+      }
+      
+      // Setting preparations
+      if (section.expectedSetting !== context.nextSection.expectedSetting) {
+        setups.push(`Prepare setting transition to ${section.expectedSetting} for section ${section.sectionNumber}`);
+      }
+      
+      // Plot point preparations
+      if (section.criticalPlotPoints.length > 0) {
+        setups.push(`Set up plot elements for section ${section.sectionNumber}: ${section.criticalPlotPoints[0]}`);
+      }
+    }
+
+    return setups.slice(0, 4); // Limit to 4 most relevant
+  }
+
+  /**
+   * Check if emotional beats are compatible for progression
+   */
+  private areEmotionalBeatsCompatible(currentBeat: string, futureBeat: string): boolean {
+    if (!currentBeat || !futureBeat) return true;
+
+    // Define emotional progression patterns
+    const compatibleProgressions = [
+      ['calm', 'tension'], ['tension', 'conflict'], ['conflict', 'resolution'],
+      ['hope', 'fear'], ['fear', 'relief'], ['confusion', 'clarity'],
+      ['anticipation', 'revelation'], ['buildup', 'climax'], ['setup', 'payoff']
+    ];
+
+    return compatibleProgressions.some(([from, to]) => 
+      currentBeat.toLowerCase().includes(from) && futureBeat.toLowerCase().includes(to)
+    ) || currentBeat.toLowerCase() === futureBeat.toLowerCase();
+  }
+
   /**
    * Analyze voice consistency based on previous content
    */

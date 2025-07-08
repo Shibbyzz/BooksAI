@@ -154,10 +154,10 @@ export class ContinuityInspectorAgent {
       model: 'gpt-4o',
       temperature: 0.0, // Very low temperature for factual consistency
       maxTokens: 4000,
-      maxRetries: 3,
-      retryDelay: 1000,
+      maxRetries: 5,        // Increased from 3 for better reliability
+      retryDelay: 500,      // Decreased from 1000 for faster recovery
       maxContentLength: 8000,
-      parsingRetries: 2,
+      parsingRetries: 4,    // Increased from 2 for better parse recovery
       ...config
     };
 
@@ -298,9 +298,10 @@ export class ContinuityInspectorAgent {
       const languageCode = settings?.language || 'en';
       const adjustedTemperature = this.languageManager.getAdjustedTemperature(languageCode, this.config.temperature);
       
+      // Fix parameter order: prompt builders expect (chapterNumber, content, contextData, config)
       const basePrompt = additionalData 
-        ? promptBuilder(contextData, chapterNumber, content, researchUsed, this.promptConfig, additionalData)
-        : promptBuilder(contextData, chapterNumber, content, this.promptConfig);
+        ? promptBuilder(chapterNumber, content, contextData, additionalData)
+        : promptBuilder(chapterNumber, content, contextData, this.promptConfig);
         
       const languageAdditions = this.languageManager.getContentPromptAdditions(languageCode, settings?.genre);
       const prompt = basePrompt + languageAdditions;
@@ -320,7 +321,13 @@ export class ContinuityInspectorAgent {
       const errorMsg = `${category} check failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
       trace.parseErrors.push(errorMsg);
       console.error(`❌ ${errorMsg}`);
-      return [];
+      
+      // NEW: Hard fail for critical parsing failures instead of returning empty array
+      if (error instanceof Error && error.message.includes('All parsing attempts failed')) {
+        throw new Error(`CRITICAL: ${category} consistency check failed after all retries - ${errorMsg}`);
+      }
+      
+      return []; // Only return empty for non-critical errors
     }
   }
 
@@ -393,6 +400,11 @@ export class ContinuityInspectorAgent {
           const errorMsg = `Character check failed for ${character.name}: ${error instanceof Error ? error.message : 'Unknown error'}`;
           trace.parseErrors.push(errorMsg);
           console.error(`❌ ${errorMsg}`);
+          
+          // NEW: Hard fail for critical parsing failures
+          if (error instanceof Error && error.message.includes('All parsing attempts failed')) {
+            throw new Error(`CRITICAL: Character consistency check for ${character.name} failed after all retries - ${errorMsg}`);
+          }
         }
       }
     }
@@ -623,6 +635,96 @@ export class ContinuityInspectorAgent {
   }
 
   /**
+   * Check consistency of a section in real-time (NEW: Section-level validation)
+   */
+  async checkSectionConsistency(
+    chapterNumber: number,
+    sectionNumber: number,
+    sectionContent: string,
+    sectionSummary: string,
+    accumulatedChapterContent: string,
+    researchUsed: string[],
+    settings?: BookSettings
+  ): Promise<ConsistencyReport> {
+    const startTime = Date.now();
+    const trace: ContinuityTrace = {
+      chapterNumber: chapterNumber + (sectionNumber / 100), // Pseudo-chapter ID for tracking
+      processingSteps: [],
+      aiResponses: {},
+      parseErrors: [],
+      retryAttempts: 0,
+      contentLength: sectionContent.length,
+      issuesFound: 0,
+      processingTime: 0
+    };
+
+    try {
+      console.log(`🔍 [REAL-TIME] Checking consistency for Chapter ${chapterNumber}, Section ${sectionNumber}...`);
+      trace.processingSteps.push('Starting real-time section consistency check');
+      
+      // Lightweight tracker update for section
+      trace.processingSteps.push('Updating tracker from section');
+      await this.updateTrackerFromSection(chapterNumber, sectionNumber, sectionContent, sectionSummary, researchUsed, trace, settings);
+      
+      // Perform focused consistency checks for this section
+      trace.processingSteps.push('Performing section consistency checks');
+      const issues = await this.performSectionConsistencyChecks(
+        chapterNumber, 
+        sectionNumber, 
+        sectionContent, 
+        accumulatedChapterContent, 
+        researchUsed, 
+        trace, 
+        settings
+      );
+      trace.issuesFound = issues.length;
+      
+      // Calculate scores (more lenient for sections)
+      trace.processingSteps.push('Calculating section scores');
+      const { overallScore, categoryScores } = this.calculateSectionConsistencyScore(issues, sectionContent.length);
+      
+      // Generate immediate recommendations
+      trace.processingSteps.push('Generating section recommendations');
+      const recommendations = this.generateSectionRecommendations(issues, chapterNumber, sectionNumber);
+      
+      trace.processingTime = Date.now() - startTime;
+      
+      console.log(`✅ Section consistency check complete - Score: ${overallScore}/100, Issues: ${issues.length}`);
+      
+      return {
+        overallScore,
+        categoryScores,
+        issues,
+        recommendations,
+        trace,
+        successfulElements: this.identifySuccessfulSectionElements(chapterNumber, sectionNumber)
+      };
+      
+    } catch (error) {
+      trace.processingTime = Date.now() - startTime;
+      const errorMsg = `Section consistency check failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      trace.parseErrors.push(errorMsg);
+      console.error('❌ Section consistency check error:', error);
+      
+      return {
+        overallScore: 30,
+        categoryScores: { character: 30, timeline: 30, worldbuilding: 30, research: 30 },
+                 issues: [{
+           type: 'character',
+           severity: 'critical',
+           description: errorMsg,
+           suggestion: 'Review section content and try again',
+           conflictingElements: [],
+           chapters: [chapterNumber]
+         }],
+        recommendations: ['Fix validation errors and retry section generation'],
+        trace,
+        successfulElements: []
+      };
+    }
+  }
+
+  /**
    * Check consistency of a chapter before publication
    */
   async checkChapterConsistency(
@@ -688,7 +790,13 @@ export class ContinuityInspectorAgent {
       trace.parseErrors.push(errorMsg);
       console.error('❌ Error checking chapter consistency:', error);
       
-      // Return partial results
+      // NEW: Hard fail for critical consistency failures
+      if (error instanceof Error && error.message.includes('CRITICAL:')) {
+        console.error('🚫 CRITICAL consistency failure - cannot proceed with fallback');
+        throw error; // Propagate critical errors
+      }
+      
+      // Return partial results for non-critical errors
       return {
         overallScore: 0,
         categoryScores: {},
@@ -1053,6 +1161,202 @@ export class ContinuityInspectorAgent {
     recommendations.push('Continue monitoring consistency as the story progresses');
     
     return recommendations;
+  }
+
+  /**
+   * Update tracker with information from a new section (lightweight version)
+   */
+  private async updateTrackerFromSection(
+    chapterNumber: number,
+    sectionNumber: number,
+    content: string,
+    summary: string,
+    researchUsed: string[],
+    trace: ContinuityTrace,
+    settings?: BookSettings
+  ): Promise<void> {
+    try {
+      // Lightweight update - only track immediate changes
+      // Update character states if they appear in this section
+      this.tracker.characters.forEach(char => {
+        if (content.toLowerCase().includes(char.name.toLowerCase())) {
+          char.lastSeen = chapterNumber;
+          // Simple state updates based on content analysis
+          if (content.includes('angry') || content.includes('furious')) {
+            char.emotionalState = 'angry';
+          } else if (content.includes('sad') || content.includes('crying')) {
+            char.emotionalState = 'sad';
+          } else if (content.includes('happy') || content.includes('smiling')) {
+            char.emotionalState = 'happy';
+          }
+        }
+      });
+      
+      // Add simple timeline entry for section
+      this.tracker.timeline.push({
+        chapter: chapterNumber,
+        timeReference: `Section ${sectionNumber}`,
+        duration: 'Section duration'
+      });
+      
+    } catch (error) {
+      const errorMsg = `Section tracker update failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      trace.parseErrors.push(errorMsg);
+      console.warn('⚠️ Section tracker update failed:', error);
+    }
+  }
+
+  /**
+   * Perform focused consistency checks for a single section
+   */
+  private async performSectionConsistencyChecks(
+    chapterNumber: number,
+    sectionNumber: number,
+    sectionContent: string,
+    accumulatedChapterContent: string,
+    researchUsed: string[],
+    trace: ContinuityTrace,
+    settings?: BookSettings
+  ): Promise<ConsistencyIssue[]> {
+    const issues: ConsistencyIssue[] = [];
+    
+    try {
+      // Focus on critical consistency checks for real-time validation
+      
+      // 1. Character consistency (optimized - only check characters present in this section once)
+      const charactersInSection = this.tracker.characters.filter(character => 
+        sectionContent.toLowerCase().includes(character.name.toLowerCase())
+      );
+      
+      if (charactersInSection.length > 0) {
+        console.log(`🔍 Character consistency check for ${charactersInSection.length} character(s): ${charactersInSection.map(c => c.name).join(', ')}`);
+        
+        // Run character consistency check once for all characters in this section
+        const characterIssues = await this.runCharacterConsistencyCheck(
+          chapterNumber, sectionContent, researchUsed, trace, settings
+        );
+        issues.push(...characterIssues);
+      }
+      
+      // 2. Timeline consistency (compare with previous sections)
+      const timelineIssues = await this.runTimelineConsistencyCheck(
+        chapterNumber, sectionContent, researchUsed, trace, settings
+      );
+      issues.push(...timelineIssues);
+      
+      // 3. Basic worldbuilding consistency
+      const worldIssues = await this.runWorldbuildingConsistencyCheck(
+        chapterNumber, sectionContent, researchUsed, trace, settings
+      );
+      issues.push(...worldIssues);
+      
+    } catch (error) {
+      const errorMsg = `Section consistency checks failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      trace.parseErrors.push(errorMsg);
+      console.error('❌ Section consistency checks error:', error);
+    }
+    
+    return issues;
+  }
+
+  /**
+   * Calculate consistency score for sections (more lenient than chapter scoring)
+   */
+  private calculateSectionConsistencyScore(issues: ConsistencyIssue[], contentLength: number): { overallScore: number; categoryScores: any } {
+    // Section scoring is more lenient - small inconsistencies are acceptable
+    let score = 100;
+    
+    const criticalIssues = issues.filter(i => i.severity === 'critical');
+    const majorIssues = issues.filter(i => i.severity === 'major');
+    const minorIssues = issues.filter(i => i.severity === 'minor');
+    
+    // Less harsh penalties for sections
+    score -= criticalIssues.length * 15; // vs 25 for chapters
+    score -= majorIssues.length * 8;     // vs 15 for chapters
+    score -= minorIssues.length * 3;     // vs 5 for chapters
+    
+    // Bonus for short sections (more acceptable to have minor issues)
+    if (contentLength < 500) {
+      score += 5;
+    }
+    
+    const categoryScores = {
+      character: Math.max(0, score - (criticalIssues.length * 10)),
+      timeline: Math.max(0, score - (majorIssues.length * 5)),
+      worldbuilding: Math.max(0, score - (minorIssues.length * 3)),
+      research: Math.max(0, score)
+    };
+    
+    return {
+      overallScore: Math.max(0, Math.min(100, score)),
+      categoryScores
+    };
+  }
+
+  /**
+   * Generate recommendations specific to sections
+   */
+  private generateSectionRecommendations(issues: ConsistencyIssue[], chapterNumber: number, sectionNumber: number): string[] {
+    const recommendations: string[] = [];
+    
+    if (issues.length === 0) {
+      recommendations.push(`Section ${sectionNumber} maintains good consistency`);
+      return recommendations;
+    }
+    
+    // Group issues by category
+    const issuesByCategory = issues.reduce((acc, issue) => {
+      acc[issue.type] = acc[issue.type] || [];
+      acc[issue.type].push(issue);
+      return acc;
+    }, {} as Record<string, ConsistencyIssue[]>);
+    
+    // Generate specific recommendations
+    Object.entries(issuesByCategory).forEach(([category, categoryIssues]) => {
+      if (categoryIssues.length > 0) {
+        const criticalInCategory = categoryIssues.filter(i => i.severity === 'critical');
+        
+        if (criticalInCategory.length > 0) {
+          recommendations.push(`CRITICAL: Fix ${category} issues in section ${sectionNumber} before proceeding`);
+        } else {
+          recommendations.push(`Review ${category} consistency in section ${sectionNumber}`);
+        }
+      }
+    });
+    
+    // Add specific suggestions from issues
+    issues.forEach(issue => {
+      if (issue.suggestion) {
+        recommendations.push(`Section ${sectionNumber}: ${issue.suggestion}`);
+      }
+    });
+    
+    return recommendations;
+  }
+
+  /**
+   * Identify successful elements for sections
+   */
+  private identifySuccessfulSectionElements(chapterNumber: number, sectionNumber: number): string[] {
+    const elements: string[] = [];
+    
+    // Check character presence
+    const activeCharacters = this.tracker.characters.filter(c => c.lastSeen === chapterNumber);
+    if (activeCharacters.length > 0) {
+      elements.push(`Section ${sectionNumber} maintains character continuity`);
+    }
+    
+    // Check timeline progression
+    const recentTimeEntries = this.tracker.timeline.filter(t => t.chapter === chapterNumber);
+    if (recentTimeEntries.length > 0) {
+      elements.push(`Section ${sectionNumber} advances timeline appropriately`);
+    }
+    
+    if (elements.length === 0) {
+      elements.push(`Section ${sectionNumber} maintains basic narrative structure`);
+    }
+    
+    return elements;
   }
 
   /**

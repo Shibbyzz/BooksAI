@@ -18,11 +18,35 @@ export interface RateLimitStatus {
   isLimited: boolean;
 }
 
+interface TokenUsageTracker {
+  totalTokens: number;
+  totalRequests: number;
+  estimatedCost: number; // In USD
+  lastReset: Date;
+}
+
 export class RateLimiter {
   private limits: Map<string, RateLimitConfig>;
   private usage: Map<string, { requests: number; tokens: number; resetTime: Date }>;
   private requestQueue: Array<{ request: RateLimitRequest; resolve: () => void; reject: (error: Error) => void }>;
   private processingQueue: boolean = false;
+  private requests: Map<string, number> = new Map();
+  private resetTimes: Map<string, number> = new Map();
+  private tokenUsage: TokenUsageTracker = {
+    totalTokens: 0,
+    totalRequests: 0,
+    estimatedCost: 0,
+    lastReset: new Date()
+  };
+
+  // Token pricing per 1K tokens (approximate as of 2024)
+  private tokenPricing = {
+    'gpt-4o': { input: 0.005, output: 0.015 },      // $5/$15 per 1M tokens
+    'gpt-4o-mini': { input: 0.00015, output: 0.0006 }, // $0.15/$0.60 per 1M tokens  
+    'gpt-3.5-turbo': { input: 0.0005, output: 0.0015 }, // $0.50/$1.50 per 1M tokens
+    'o1-preview': { input: 0.015, output: 0.060 },    // $15/$60 per 1M tokens
+    'o1-mini': { input: 0.003, output: 0.012 }        // $3/$12 per 1M tokens
+  };
 
   constructor() {
     this.limits = new Map();
@@ -256,5 +280,64 @@ export class RateLimiter {
     const bufferTokens = 100;
     
     return inputTokens + outputTokens + bufferTokens;
+  }
+
+  /**
+   * Track token usage and calculate costs
+   */
+  trackTokenUsage(
+    model: string, 
+    inputTokens: number, 
+    outputTokens: number,
+    context?: string
+  ): void {
+    const pricing = this.tokenPricing[model as keyof typeof this.tokenPricing] || this.tokenPricing['gpt-4o-mini'];
+    const inputCost = (inputTokens / 1000) * pricing.input;
+    const outputCost = (outputTokens / 1000) * pricing.output;
+    const totalCost = inputCost + outputCost;
+
+    this.tokenUsage.totalTokens += inputTokens + outputTokens;
+    this.tokenUsage.totalRequests += 1;
+    this.tokenUsage.estimatedCost += totalCost;
+
+    console.log(`💰 API Cost Tracking: ${model} - ${inputTokens + outputTokens} tokens (~$${totalCost.toFixed(4)}) ${context ? `[${context}]` : ''}`);
+    console.log(`📊 Session Total: ${this.tokenUsage.totalTokens.toLocaleString()} tokens, ~$${this.tokenUsage.estimatedCost.toFixed(4)} across ${this.tokenUsage.totalRequests} requests`);
+  }
+
+  /**
+   * Get current token usage statistics
+   */
+  getUsageStats(): TokenUsageTracker {
+    return { ...this.tokenUsage };
+  }
+
+  /**
+   * Reset usage tracking
+   */
+  resetUsageTracking(): void {
+    this.tokenUsage = {
+      totalTokens: 0,
+      totalRequests: 0,
+      estimatedCost: 0,
+      lastReset: new Date()
+    };
+    console.log('📊 Token usage tracking reset');
+  }
+
+  /**
+   * Get a formatted cost summary
+   */
+  getCostSummary(): string {
+    const stats = this.tokenUsage;
+    const avgCostPerRequest = stats.totalRequests > 0 ? stats.estimatedCost / stats.totalRequests : 0;
+    const avgTokensPerRequest = stats.totalRequests > 0 ? stats.totalTokens / stats.totalRequests : 0;
+    
+    return `💰 Cost Summary:
+    📊 Total Requests: ${stats.totalRequests.toLocaleString()}
+    🔤 Total Tokens: ${stats.totalTokens.toLocaleString()}
+    💵 Estimated Cost: $${stats.estimatedCost.toFixed(4)}
+    📈 Avg Cost/Request: $${avgCostPerRequest.toFixed(4)}
+    📈 Avg Tokens/Request: ${Math.round(avgTokensPerRequest).toLocaleString()}
+    ⏰ Tracking Since: ${stats.lastReset.toLocaleString()}`;
   }
 } 
